@@ -46,7 +46,17 @@ export const Header: React.FC<HeaderProps> = ({
     isPublic
   } = useAuth();
 
-  const { settings, updateSettings, cloudStatus, lastSyncedAt, syncWithCloud } = useFestData();
+  const { settings, updateSettings, cloudStatus, lastSyncedAt, syncWithCloud, teams } = useFestData();
+
+  const currentUserTeam = teams.find(
+    t =>
+      t.id === currentUser.teamId ||
+      t.name.toLowerCase() === currentUser.teamId?.toLowerCase() ||
+      t.code.toLowerCase() === currentUser.teamId?.toLowerCase() ||
+      (currentUser.username &&
+        (currentUser.username.toLowerCase().includes(t.code.toLowerCase()) ||
+          currentUser.username.toLowerCase().includes(t.name.toLowerCase())))
+  );
 
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -142,11 +152,11 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             </div>
 
-            {/* Supabase Cloud Live Status Indicator */}
-            <div className="hidden xl:flex items-center">
+            {/* Cloud Sync Status Indicator */}
+            <div className="hidden xl:flex items-center ml-1">
               <button
-                onClick={() => syncWithCloud()}
-                title={lastSyncedAt ? `Supabase Cloud Connected (Last synced: ${lastSyncedAt}). Click to force sync.` : 'Click to sync with Supabase'}
+                onClick={syncWithCloud}
+                title={`Cloud Database: ${cloudStatus.toUpperCase()}${lastSyncedAt ? ` | Last Synced: ${new Date(lastSyncedAt).toLocaleTimeString()}` : ''}`}
                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all cursor-pointer ${
                   cloudStatus === 'connected'
                     ? 'bg-emerald-50/90 text-emerald-700 border-emerald-200/80 hover:bg-emerald-100'
@@ -239,11 +249,27 @@ export const Header: React.FC<HeaderProps> = ({
                       <span className="text-sm font-bold text-slate-900 line-clamp-1 max-w-[140px]">{currentUser.name}</span>
                       <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isUserMenuOpen ? 'rotate-180 text-slate-700' : ''}`} />
                     </div>
-                    <div className="flex items-center gap-2 mt-0.5">
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                       <span className="text-xs font-mono font-medium text-indigo-600">@{currentUser.username}</span>
                       <span className={`inline-block text-[10px] px-2 py-0.5 rounded-md border font-semibold ${getRoleBadgeStyle()}`}>
                         {currentUser.role.replace('_', ' ')}
                       </span>
+                      {currentUserTeam && (
+                        <span
+                          className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md border font-bold"
+                          style={{
+                            backgroundColor: `${currentUserTeam.color || '#6366f1'}15`,
+                            borderColor: `${currentUserTeam.color || '#6366f1'}35`,
+                            color: currentUserTeam.color || '#6366f1'
+                          }}
+                        >
+                          <span
+                            className="w-1.5 h-1.5 rounded-full"
+                            style={{ backgroundColor: currentUserTeam.color || '#6366f1' }}
+                          />
+                          {currentUserTeam.name}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </button>
@@ -252,32 +278,88 @@ export const Header: React.FC<HeaderProps> = ({
                 {isUserMenuOpen && (
                   <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-3xl shadow-2xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
                     <div className="px-3 py-2 border-b border-slate-100 mb-2">
-                      <p className="text-sm font-bold text-slate-900 line-clamp-1">{currentUser.name}</p>
-                      <p className="text-xs font-mono text-indigo-600 font-semibold">@{currentUser.username}</p>
-                      <p className="text-xs text-slate-500 truncate">{currentUser.email}</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-bold text-slate-900 line-clamp-1">{currentUser.name}</p>
+                        {currentUserTeam ? (
+                          <span
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 shrink-0"
+                            style={{
+                              backgroundColor: `${currentUserTeam.color || '#6366f1'}15`,
+                              borderColor: `${currentUserTeam.color || '#6366f1'}35`,
+                              color: currentUserTeam.color || '#6366f1'
+                            }}
+                          >
+                            <span
+                              className="w-1.5 h-1.5 rounded-full"
+                              style={{ backgroundColor: currentUserTeam.color || '#6366f1' }}
+                            />
+                            {currentUserTeam.name}
+                          </span>
+                        ) : (
+                          <span className={`inline-block text-[10px] px-2 py-0.5 rounded-md border font-semibold shrink-0 ${getRoleBadgeStyle()}`}>
+                            {currentUser.role.replace('_', ' ')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-xs font-mono text-indigo-600 font-semibold">@{currentUser.username}</p>
+                        {currentUserTeam && (
+                          <span className={`inline-block text-[9px] px-1.5 py-0.2 rounded border font-semibold ${getRoleBadgeStyle()}`}>
+                            {currentUser.role.replace('_', ' ')}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 truncate mt-0.5">{currentUser.email}</p>
                     </div>
 
                     <div className="space-y-1.5 max-h-64 overflow-y-auto custom-scrollbar">
                       <div className="text-[10px] font-bold text-slate-400 px-2 pt-1 uppercase tracking-wider">Switch Account Role</div>
-                      {allUsers.map(u => (
-                        <button
-                          key={u.id}
-                          type="button"
-                          onClick={() => {
-                            switchUser(u.id);
-                            setIsUserMenuOpen(false);
-                            if (u.role === 'SUPER_ADMIN' || u.role === 'ADMIN') setActiveTab('admin_dashboard');
-                            else if (u.role === 'TEAM_LEADER') setActiveTab('tl_my_team');
-                            else if (u.role === 'CONTROLLER') setActiveTab('ctrl_assigned');
-                            else setActiveTab('public_live');
-                          }}
-                          className={`w-full text-left flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer ${currentUser.id === u.id ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-100' : 'text-slate-700 hover:bg-slate-50'
+                      {allUsers.map(u => {
+                        const uTeam = teams.find(
+                          t =>
+                            t.id === u.teamId ||
+                            t.name.toLowerCase() === u.teamId?.toLowerCase() ||
+                            t.code.toLowerCase() === u.teamId?.toLowerCase() ||
+                            (u.username &&
+                              (u.username.toLowerCase().includes(t.code.toLowerCase()) ||
+                                u.username.toLowerCase().includes(t.name.toLowerCase())))
+                        );
+
+                        return (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => {
+                              switchUser(u.id);
+                              setIsUserMenuOpen(false);
+                              if (u.role === 'SUPER_ADMIN' || u.role === 'ADMIN') setActiveTab('admin_dashboard');
+                              else if (u.role === 'TEAM_LEADER') setActiveTab('tl_my_team');
+                              else if (u.role === 'CONTROLLER') setActiveTab('ctrl_assigned');
+                              else setActiveTab('public_live');
+                            }}
+                            className={`w-full text-left flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer ${
+                              currentUser.id === u.id ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-100' : 'text-slate-700 hover:bg-slate-50'
                             }`}
-                        >
-                          <span className="truncate">{u.name}</span>
-                          <span className="text-xs font-mono text-slate-400">@{u.username}</span>
-                        </button>
-                      ))}
+                          >
+                            <div className="flex items-center gap-2 min-w-0 pr-2">
+                              <span className="truncate">{u.name}</span>
+                              {uTeam && (
+                                <span
+                                  className="text-[9px] font-bold px-1.5 py-0.2 rounded border shrink-0"
+                                  style={{
+                                    backgroundColor: `${uTeam.color || '#6366f1'}15`,
+                                    borderColor: `${uTeam.color || '#6366f1'}35`,
+                                    color: uTeam.color || '#6366f1'
+                                  }}
+                                >
+                                  {uTeam.name}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-xs font-mono text-slate-400 shrink-0">@{u.username}</span>
+                          </button>
+                        );
+                      })}
                     </div>
 
                     <div className="pt-2 border-t border-slate-100 mt-2">
