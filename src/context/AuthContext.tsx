@@ -214,9 +214,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
     if (role === 'TEAM_LEADER' && teamId) {
-      const match = allUsers.find(u => u.role === 'TEAM_LEADER' && u.teamId === teamId);
+      const match = allUsers.find(
+        u =>
+          u.role === 'TEAM_LEADER' &&
+          (u.teamId === teamId ||
+            u.teamId?.toLowerCase() === teamId.toLowerCase() ||
+            (u.username && u.username.toLowerCase().includes(teamId.toLowerCase())))
+      );
       if (match) {
         setCurrentUser(match);
+        return;
+      } else {
+        const dynamicUser: User = {
+          id: `usr_tl_${teamId}`,
+          username: `leader_${teamId.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+          name: `Team Leader`,
+          email: `leader_${teamId.toLowerCase()}@festportal.edu`,
+          role: 'TEAM_LEADER',
+          teamId: teamId,
+          isActive: true
+        };
+        setAllUsers(prev => [...prev.filter(u => u.id !== dynamicUser.id), dynamicUser]);
+        setCurrentUser(dynamicUser);
         return;
       }
     }

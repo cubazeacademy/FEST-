@@ -39,6 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
     currentUser,
     allUsers,
     switchUser,
+    switchRole,
     logout,
     isSuperAdmin,
     isTeamLeader,
@@ -148,7 +149,6 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <span className={`w-2 h-2 rounded-full ${settings.registrationOpen ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
                 {settings.registrationOpen ? 'Registration OPEN' : 'Registration CLOSED'}
-                {isSuperAdmin && <span className="text-[10px] font-normal opacity-70 ml-0.5">(Toggle)</span>}
               </button>
             </div>
 
@@ -254,7 +254,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <span className={`inline-block text-[10px] px-2 py-0.5 rounded-md border font-semibold ${getRoleBadgeStyle()}`}>
                         {currentUser.role.replace('_', ' ')}
                       </span>
-                      {currentUserTeam && (
+                      {currentUserTeam ? (
                         <span
                           className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md border font-bold"
                           style={{
@@ -269,7 +269,12 @@ export const Header: React.FC<HeaderProps> = ({
                           />
                           {currentUserTeam.name}
                         </span>
-                      )}
+                      ) : isSuperAdmin ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md border font-semibold bg-emerald-50 text-emerald-700 border-emerald-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          All Houses
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 </button>
@@ -295,6 +300,11 @@ export const Header: React.FC<HeaderProps> = ({
                             />
                             {currentUserTeam.name}
                           </span>
+                        ) : isSuperAdmin ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md border font-semibold bg-emerald-50 text-emerald-700 border-emerald-200 shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            All Houses
+                          </span>
                         ) : (
                           <span className={`inline-block text-[10px] px-2 py-0.5 rounded-md border font-semibold shrink-0 ${getRoleBadgeStyle()}`}>
                             {currentUser.role.replace('_', ' ')}
@@ -303,11 +313,9 @@ export const Header: React.FC<HeaderProps> = ({
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
                         <p className="text-xs font-mono text-indigo-600 font-semibold">@{currentUser.username}</p>
-                        {currentUserTeam && (
-                          <span className={`inline-block text-[9px] px-1.5 py-0.2 rounded border font-semibold ${getRoleBadgeStyle()}`}>
-                            {currentUser.role.replace('_', ' ')}
-                          </span>
-                        )}
+                        <span className={`inline-block text-[9px] px-1.5 py-0.2 rounded border font-semibold ${getRoleBadgeStyle()}`}>
+                          {currentUser.role.replace('_', ' ')}
+                        </span>
                       </div>
                       <p className="text-xs text-slate-500 truncate mt-0.5">{currentUser.email}</p>
                     </div>
@@ -360,6 +368,33 @@ export const Header: React.FC<HeaderProps> = ({
                           </button>
                         );
                       })}
+
+                      {/* Quick Switch to Teams / Houses */}
+                      {teams.length > 0 && (
+                        <div className="pt-2 border-t border-slate-100 mt-2 space-y-1">
+                          <div className="text-[10px] font-bold text-slate-400 px-2 uppercase tracking-wider">Switch to House Portal</div>
+                          {teams.map(t => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => {
+                                switchRole('TEAM_LEADER', t.id);
+                                setIsUserMenuOpen(false);
+                                setActiveTab('tl_my_team');
+                              }}
+                              className={`w-full text-left flex items-center justify-between px-3 py-1.5 rounded-xl text-xs transition-colors cursor-pointer ${
+                                currentUserTeam?.id === t.id ? 'bg-indigo-50 text-indigo-700 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                              }`}
+                            >
+                              <span className="flex items-center gap-2 font-medium truncate">
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#6366f1' }} />
+                                <span className="truncate">{t.name}</span>
+                              </span>
+                              <span className="text-[10px] font-mono font-bold text-slate-400 shrink-0 ml-1.5">{t.code}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div className="pt-2 border-t border-slate-100 mt-2">
