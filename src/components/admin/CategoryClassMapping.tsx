@@ -508,7 +508,7 @@ export const CategoryClassMapping: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. BIDAYA, ULA, KIDS, SENIOR"
+                  placeholder="e.g. SUB_JUNIOR, JUNIOR, SENIOR"
                   value={editingConfig.category}
                   onChange={e => setEditingConfig({ ...editingConfig, category: e.target.value.toUpperCase() })}
                   className="mt-1 w-full px-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-sm text-slate-900 font-mono font-bold uppercase focus:outline-none focus:border-indigo-500 focus:bg-white"
@@ -521,7 +521,7 @@ export const CategoryClassMapping: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Bidaya (Classes 1 - 2)"
+                  placeholder="e.g. Sub Junior (Classes 1 - 4)"
                   value={editingConfig.displayName}
                   onChange={e => setEditingConfig({ ...editingConfig, displayName: e.target.value })}
                   className="mt-1 w-full px-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-sm text-slate-900 font-bold focus:outline-none focus:border-indigo-500 focus:bg-white"
@@ -689,7 +689,7 @@ export const CategoryClassMapping: React.FC = () => {
               <input
                 type="text"
                 required
-                placeholder="e.g. BIDAYA, ULA, KIDS, SENIOR"
+                placeholder="e.g. SUB_JUNIOR, JUNIOR, SENIOR"
                 value={createCategoryForm.code}
                 onChange={e => setCreateCategoryForm({ ...createCategoryForm, code: e.target.value.toUpperCase() })}
                 className="mt-1 w-full px-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-sm text-slate-900 font-mono font-bold uppercase focus:outline-none focus:border-indigo-500 focus:bg-white"
@@ -702,7 +702,7 @@ export const CategoryClassMapping: React.FC = () => {
               <input
                 type="text"
                 required
-                placeholder="e.g. Bidaya (Classes 1 - 2)"
+                placeholder="e.g. Sub Junior (Classes 1 - 4)"
                 value={createCategoryForm.displayName}
                 onChange={e => setCreateCategoryForm({ ...createCategoryForm, displayName: e.target.value })}
                 className="mt-1 w-full px-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-sm text-slate-900 font-bold focus:outline-none focus:border-indigo-500 focus:bg-white"

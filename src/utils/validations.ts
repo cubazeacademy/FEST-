@@ -53,8 +53,7 @@ export function resolveCategoryFromClass(
 }
 
 /**
- * Normalizes Islamic / Fest category names to handle phonetic & spelling variations
- * e.g., ULA <-> UOOLA, BIDAYA <-> BIDAYAH, SANIYA <-> THANIYA, etc.
+ * Normalizes category names to handle phonetic & spelling variations, spaces, and punctuation
  */
 export function normalizeCategoryName(name: string): string {
   if (!name) return '';
