@@ -1,5 +1,33 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { supabase, FEST_STATE_KEY, fetchFullRelationalData, saveFullRelationalData } from '../lib/supabase';
+import {
+  supabase,
+  FEST_STATE_KEY,
+  fetchFullRelationalData,
+  saveFullRelationalData,
+  saveStudentDb,
+  saveStudentsBatchDb,
+  deleteStudentDb,
+  deleteStudentsBatchDb,
+  saveTeamDb,
+  deleteTeamDb,
+  saveProgramDb,
+  saveProgramsBatchDb,
+  deleteProgramDb,
+  deleteProgramsBatchDb,
+  saveRegistrationDb,
+  saveRegistrationsBatchDb,
+  deleteRegistrationDb,
+  saveResultDb,
+  deleteResultDb,
+  saveSettingsDb,
+  saveCategoryConfigDb,
+  deleteCategoryConfigDb,
+  saveClassMappingDb,
+  deleteClassMappingDb,
+  saveScoringConfigsDb,
+  saveAuditLogDb,
+  saveLeaderboardCacheDb
+} from '../lib/supabase';
 import {
   AuditLog,
   CategoryConfig,
@@ -294,62 +322,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
   }, []);
 
-  // Sync to Supabase whenever local state changes
-  useEffect(() => {
-    if (!isInitialLoadDoneRef.current || isRemoteUpdatingRef.current) return;
-
-    const timer = setTimeout(async () => {
-      setCloudStatus('syncing');
-      const payload = {
-        settings,
-        teams,
-        students,
-        categoryConfigs,
-        classMappings,
-        programs,
-        registrations,
-        results,
-        scoringConfigs,
-        auditLogs
-      };
-
-      const res = await saveFullRelationalData(payload);
-      if (res.success) {
-        setCloudStatus('connected');
-        setLastSyncedAt(new Date().toLocaleTimeString());
-      } else {
-        setCloudStatus('error');
-      }
-    }, 600);
-
-    return () => clearTimeout(timer);
-  }, [settings, teams, students, categoryConfigs, classMappings, programs, registrations, results, scoringConfigs, gradeConfigs, positionConfigs, auditLogs]);
-
-  // Manual trigger
-  const syncWithCloud = useCallback(async () => {
-    setCloudStatus('syncing');
-    const payload = {
-      settings,
-      teams,
-      students,
-      categoryConfigs,
-      classMappings,
-      programs,
-      registrations,
-      results,
-      scoringConfigs,
-      auditLogs
-    };
-    const res = await saveFullRelationalData(payload);
-    if (res.success) {
-      setCloudStatus('connected');
-      setLastSyncedAt(new Date().toLocaleTimeString());
-    } else {
-      setCloudStatus('error');
-    }
-  }, [settings, teams, students, categoryConfigs, classMappings, programs, registrations, results, scoringConfigs, gradeConfigs, positionConfigs, auditLogs]);
-
-  // Helper for recording audit logs
+  // Helper for recording audit logs with discrete database save
   const logAudit = (action: string, entity: AuditLog['entity'], details: string, performedBy: string, role: UserRole, entityId?: string) => {
     const newLog: AuditLog = {
       id: 'log_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
@@ -362,6 +335,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       timestamp: new Date().toISOString()
     };
     setAuditLogs(prev => [newLog, ...prev.slice(0, 99)]);
+    saveAuditLogDb(newLog).catch(e => console.error('Audit log persist error:', e));
   };
 
   // Pure Leaderboards (Filtered by active sections in Settings)
@@ -384,6 +358,39 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const sorted = [...teamLeaderboard].sort((a, b) => b.sportsTotalPoints - a.sportsTotalPoints);
     return sorted[0]?.sportsTotalPoints > 0 ? sorted[0] : null;
   }, [teamLeaderboard, settings.enableSportsSection]);
+
+  // Keep live public leaderboard cache fresh in Postgres
+  useEffect(() => {
+    if (!isInitialLoadDoneRef.current || isRemoteUpdatingRef.current) return;
+    const timer = setTimeout(() => {
+      saveLeaderboardCacheDb(teamLeaderboard).catch(console.error);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [teamLeaderboard]);
+
+  // Manual full sync trigger
+  const syncWithCloud = useCallback(async () => {
+    setCloudStatus('syncing');
+    const payload = {
+      settings,
+      teams,
+      students,
+      categoryConfigs,
+      classMappings,
+      programs,
+      registrations,
+      results,
+      scoringConfigs,
+      auditLogs
+    };
+    const res = await saveFullRelationalData(payload);
+    if (res.success) {
+      setCloudStatus('connected');
+      setLastSyncedAt(new Date().toLocaleTimeString());
+    } else {
+      setCloudStatus('error');
+    }
+  }, [settings, teams, students, categoryConfigs, classMappings, programs, registrations, results, scoringConfigs, gradeConfigs, positionConfigs, auditLogs]);
 
   // Student Actions
   const addStudent = (studentData: Omit<Student, 'id' | 'createdDate'>, performedBy: string, role: UserRole) => {
@@ -416,6 +423,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     setStudents(prev => [...prev, newStudent]);
+    saveStudentDb(newStudent).catch(console.error);
     logAudit('CREATE_STUDENT', 'STUDENT', `Enrolled student ${newStudent.name} (Adm: ${newStudent.admissionNo}, Class: ${newStudent.classNumber}, Cat: ${newStudent.category}${newStudent.chestNumber ? `, Chest: #${newStudent.chestNumber}` : ''})`, performedBy, role, newStudent.id);
     return { success: true };
   };
@@ -439,6 +447,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }));
 
     setStudents(prev => [...prev, ...newStudents]);
+    saveStudentsBatchDb(newStudents).catch(console.error);
     logAudit(
       'IMPORT_STUDENTS_CSV',
       'STUDENT',
@@ -470,6 +479,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     setStudents(prev => prev.map(s => s.id === updated.id ? updated : s));
+    saveStudentDb(updated).catch(console.error);
     logAudit('UPDATE_STUDENT', 'STUDENT', `Updated student details for ${student.name} (${student.admissionNo})`, performedBy, role, student.id);
     return { success: true };
   };
@@ -481,6 +491,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setStudents(prev => prev.filter(s => s.id !== studentId));
     // Also remove orphaned registrations
     setRegistrations(prev => prev.filter(r => r.studentId !== studentId));
+    deleteStudentDb(studentId).catch(console.error);
     logAudit('DELETE_STUDENT', 'STUDENT', `Deleted student ${target.name} (Adm: ${target.admissionNo})`, performedBy, role, studentId);
     return { success: true };
   };
@@ -497,6 +508,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     setStudents(prev => prev.filter(s => !idSet.has(s.id)));
     setRegistrations(prev => prev.filter(r => !idSet.has(r.studentId)));
+    deleteStudentsBatchDb(studentIds).catch(console.error);
 
     const namesSample = affectedStudents.slice(0, 3).map(s => s.name).join(', ');
     const moreText = affectedStudents.length > 3 ? ` and ${affectedStudents.length - 3} more` : '';
@@ -515,9 +527,21 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const targetTeam = teams.find(t => t.id === targetTeamId);
     if (!student || !targetTeam) return { success: false, error: 'Student or Team not found.' };
 
-    setStudents(prev => prev.map(s => s.id === studentId ? { ...s, teamId: targetTeamId } : s));
+    const updatedStudent = { ...student, teamId: targetTeamId };
+    setStudents(prev => prev.map(s => s.id === studentId ? updatedStudent : s));
+    
     // Update active registrations
+    const updatedRegs = registrations
+      .filter(r => r.studentId === studentId)
+      .map(r => ({ ...r, teamId: targetTeamId, teamName: targetTeam.name, teamColor: targetTeam.color }));
+
     setRegistrations(prev => prev.map(r => r.studentId === studentId ? { ...r, teamId: targetTeamId, teamName: targetTeam.name, teamColor: targetTeam.color } : r));
+    
+    saveStudentDb(updatedStudent).catch(console.error);
+    if (updatedRegs.length > 0) {
+      saveRegistrationsBatchDb(updatedRegs).catch(console.error);
+    }
+    
     logAudit('TRANSFER_STUDENT_TEAM', 'STUDENT', `Transferred ${student.name} to team ${targetTeam.name}`, performedBy, role, studentId);
     return { success: true };
   };
@@ -537,28 +561,41 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     setClassMappings(prev => [...prev, newMapping]);
+    saveClassMappingDb(newMapping).catch(console.error);
 
     // Update Category Config assignedClasses
-    setCategoryConfigs(prev => prev.map(c => {
-      if (c.category === category) {
-        return {
+    setCategoryConfigs(prev => {
+      const next = prev.map(c => {
+        if (c.category === category) {
+          const updated = {
+            ...c,
+            assignedClasses: Array.from(new Set([...c.assignedClasses, classNumber.trim()]))
+          };
+          saveCategoryConfigDb(updated).catch(console.error);
+          return updated;
+        }
+        const filtered = {
           ...c,
-          assignedClasses: Array.from(new Set([...c.assignedClasses, classNumber.trim()]))
+          assignedClasses: c.assignedClasses.filter(cls => cls !== classNumber.trim())
         };
-      }
-      return {
-        ...c,
-        assignedClasses: c.assignedClasses.filter(cls => cls !== classNumber.trim())
-      };
-    }));
+        saveCategoryConfigDb(filtered).catch(console.error);
+        return filtered;
+      });
+      return next;
+    });
 
     // Auto update existing students in this class
-    setStudents(prev => prev.map(s => {
-      if (s.classNumber.trim() === classNumber.trim()) {
-        return { ...s, category };
-      }
-      return s;
-    }));
+    setStudents(prev => {
+      const updated = prev.map(s => {
+        if (s.classNumber.trim() === classNumber.trim()) {
+          const u = { ...s, category };
+          saveStudentDb(u).catch(console.error);
+          return u;
+        }
+        return s;
+      });
+      return updated;
+    });
 
     logAudit('ADD_CLASS_MAPPING', 'SETTING', `Mapped Class ${classNumber} to Category ${category}`, performedBy, role);
     return { success: true };
@@ -569,12 +606,16 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!target) return { success: false, error: 'Mapping not found.' };
 
     setClassMappings(prev => prev.filter(m => m.id !== mappingId));
+    deleteClassMappingDb(mappingId).catch(console.error);
+
     setCategoryConfigs(prev => prev.map(c => {
       if (c.category === target.category) {
-        return {
+        const updated = {
           ...c,
           assignedClasses: c.assignedClasses.filter(cls => cls !== target.classNumber)
         };
+        saveCategoryConfigDb(updated).catch(console.error);
+        return updated;
       }
       return c;
     }));
@@ -614,25 +655,34 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     setCategoryConfigs(prev => [...prev, newConfig]);
+    saveCategoryConfigDb(newConfig).catch(console.error);
 
     if (cleanClasses.length > 0) {
       const classSet = new Set(cleanClasses);
+      const newMappings: ClassCategoryMapping[] = cleanClasses.map(cls => ({
+        id: 'map_' + Date.now() + '_' + cls,
+        classNumber: cls,
+        category: cleanCategoryCode,
+        description: `${newConfig.displayName} (Class ${cls})`
+      }));
+
       setClassMappings(prev => [
         ...prev.filter(m => !classSet.has(m.classNumber)),
-        ...cleanClasses.map(cls => ({
-          id: 'map_' + Date.now() + '_' + cls,
-          classNumber: cls,
-          category: cleanCategoryCode,
-          description: `${newConfig.displayName} (Class ${cls})`
-        }))
+        ...newMappings
       ]);
+      newMappings.forEach(m => saveClassMappingDb(m).catch(console.error));
 
-      setStudents(prev => prev.map(s => {
-        if (classSet.has(s.classNumber.trim())) {
-          return { ...s, category: cleanCategoryCode };
-        }
-        return s;
-      }));
+      setStudents(prev => {
+        const updated = prev.map(s => {
+          if (classSet.has(s.classNumber.trim())) {
+            const u = { ...s, category: cleanCategoryCode };
+            saveStudentDb(u).catch(console.error);
+            return u;
+          }
+          return s;
+        });
+        return updated;
+      });
     }
 
     logAudit('CREATE_CATEGORY', 'SETTING', `Created Category "${newConfig.displayName}" (${newConfig.category}) with ${cleanClasses.length} assigned classes`, performedBy, role);
@@ -644,6 +694,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!target) return { success: false, error: 'Category not found.' };
 
     setCategoryConfigs(prev => prev.filter(c => c.id !== categoryId));
+    deleteCategoryConfigDb(categoryId).catch(console.error);
     setClassMappings(prev => prev.filter(m => m.category !== target.category));
     logAudit('DELETE_CATEGORY', 'SETTING', `Deleted Category "${target.displayName}"`, performedBy, role);
     return { success: true };
@@ -675,6 +726,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     setCategoryConfigs(prev => prev.map(c => c.id === config.id ? updatedConfig : c));
+    saveCategoryConfigDb(updatedConfig).catch(console.error);
 
     // If category code changed, cascade updates to classMappings, students, programs, registrations
     if (oldCategoryCode && oldCategoryCode !== newCategoryCode) {
@@ -686,20 +738,24 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     if (newAssignedClasses !== undefined) {
       const assignedSet = new Set(cleanClasses);
+      const newMappings: ClassCategoryMapping[] = cleanClasses.map(cls => ({
+        id: 'map_' + Date.now() + '_' + cls,
+        classNumber: cls,
+        category: newCategoryCode,
+        description: `${updatedConfig.displayName} (Class ${cls})`
+      }));
+
       setClassMappings(prev => {
         const otherMappings = prev.filter(m => m.category !== newCategoryCode && !assignedSet.has(m.classNumber));
-        const currentCategoryMappings = cleanClasses.map(cls => ({
-          id: 'map_' + Date.now() + '_' + cls,
-          classNumber: cls,
-          category: newCategoryCode,
-          description: `${updatedConfig.displayName} (Class ${cls})`
-        }));
-        return [...otherMappings, ...currentCategoryMappings];
+        return [...otherMappings, ...newMappings];
       });
+      newMappings.forEach(m => saveClassMappingDb(m).catch(console.error));
 
       setStudents(prev => prev.map(s => {
         if (assignedSet.has(s.classNumber.trim())) {
-          return { ...s, category: newCategoryCode };
+          const u = { ...s, category: newCategoryCode };
+          saveStudentDb(u).catch(console.error);
+          return u;
         }
         return s;
       }));
@@ -722,6 +778,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     setStudents(genResult.updatedStudents);
+    saveStudentsBatchDb(genResult.updatedStudents).catch(console.error);
     logAudit(
       'GENERATE_CHEST_NUMBERS',
       'CHEST_NUMBER',
@@ -747,9 +804,19 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return { success: false, error: validation.error };
     }
 
-    setStudents(prev => prev.map(s => s.id === studentId ? { ...s, chestNumber } : s));
+    const updated = { ...student, chestNumber };
+    setStudents(prev => prev.map(s => s.id === studentId ? updated : s));
+    saveStudentDb(updated).catch(console.error);
+
     // Update in active registrations
-    setRegistrations(prev => prev.map(r => r.studentId === studentId ? { ...r, chestNumber } : r));
+    setRegistrations(prev => {
+      const nextRegs = prev.map(r => r.studentId === studentId ? { ...r, chestNumber } : r);
+      const studentRegs = nextRegs.filter(r => r.studentId === studentId);
+      if (studentRegs.length > 0) {
+        saveRegistrationsBatchDb(studentRegs).catch(console.error);
+      }
+      return nextRegs;
+    });
 
     logAudit('ASSIGN_CHEST_NO', 'CHEST_NUMBER', `Manually assigned Chest #${chestNumber} to ${student.name}`, performedBy, role, studentId);
     return { success: true };
@@ -762,6 +829,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       id: 'prog_' + Date.now()
     };
     setPrograms(prev => [...prev, newProg]);
+    saveProgramDb(newProg).catch(console.error);
     logAudit('CREATE_PROGRAM', 'PROGRAM', `Created program: "${newProg.name}" (${newProg.section} - ${newProg.category})`, performedBy, role, newProg.id);
     return { success: true };
   };
@@ -783,6 +851,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }));
 
     setPrograms(prev => [...prev, ...newPrograms]);
+    saveProgramsBatchDb(newPrograms).catch(console.error);
     logAudit(
       'IMPORT_PROGRAMS_CSV',
       'PROGRAM',
@@ -796,6 +865,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const updateProgram = (program: Program, performedBy: string, role: UserRole) => {
     setPrograms(prev => prev.map(p => p.id === program.id ? program : p));
+    saveProgramDb(program).catch(console.error);
     logAudit('UPDATE_PROGRAM', 'PROGRAM', `Updated program details: "${program.name}"`, performedBy, role, program.id);
     return { success: true };
   };
@@ -807,6 +877,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setPrograms(prev => prev.filter(p => p.id !== programId));
     setRegistrations(prev => prev.filter(r => r.programId !== programId));
     setResults(prev => prev.filter(r => r.programId !== programId));
+    deleteProgramDb(programId).catch(console.error);
     logAudit('DELETE_PROGRAM', 'PROGRAM', `Deleted program: "${prog.name}"`, performedBy, role, programId);
     return { success: true };
   };
@@ -819,6 +890,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setPrograms(prev => prev.filter(p => !idSet.has(p.id)));
     setRegistrations(prev => prev.filter(r => !idSet.has(r.programId)));
     setResults(prev => prev.filter(r => !idSet.has(r.programId)));
+    deleteProgramsBatchDb(programIds).catch(console.error);
     logAudit(
       'DELETE_PROGRAM',
       'PROGRAM',
@@ -836,12 +908,14 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       id: 'team_' + Date.now()
     };
     setTeams(prev => [...prev, newTeam]);
+    saveTeamDb(newTeam).catch(console.error);
     logAudit('CREATE_TEAM', 'TEAM', `Created team: ${newTeam.name} (${newTeam.code})`, performedBy, role, newTeam.id);
     return { success: true };
   };
 
   const updateTeam = (team: Team, performedBy: string, role: UserRole) => {
     setTeams(prev => prev.map(t => t.id === team.id ? team : t));
+    saveTeamDb(team).catch(console.error);
     logAudit('UPDATE_TEAM', 'TEAM', `Updated team: ${team.name}`, performedBy, role, team.id);
     return { success: true };
   };
@@ -853,6 +927,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setTeams(prev => prev.filter(t => t.id !== teamId));
     setStudents(prev => prev.map(s => s.teamId === teamId ? { ...s, teamId: '' } : s));
     setRegistrations(prev => prev.filter(r => r.teamId !== teamId));
+    deleteTeamDb(teamId).catch(console.error);
 
     logAudit('DELETE_TEAM', 'TEAM', `Deleted house/team "${team.name}" (${team.code})`, performedBy, role, teamId);
     return { success: true };
@@ -905,6 +980,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     setRegistrations(prev => [...prev, newReg]);
+    saveRegistrationDb(newReg).catch(console.error);
     logAudit('REGISTER_INDIVIDUAL', 'REGISTRATION', `Registered ${student.name} (Chest #${student.chestNumber}) for "${program.name}"`, performedBy, role, newReg.id);
     return { success: true };
   };
@@ -976,6 +1052,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     setRegistrations(prev => [...prev, newReg]);
+    saveRegistrationDb(newReg).catch(console.error);
     logAudit('REGISTER_GROUP', 'REGISTRATION', `Registered group "${newReg.groupName}" (${selectedStudents.length} members) for "${program.name}"`, performedBy, role, newReg.id);
     return { success: true };
   };
@@ -1015,24 +1092,22 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const finalGroupName = groupName.trim() || existingReg.groupName || `${existingReg.teamName} Group`;
 
+    const updatedReg: Registration = {
+      ...existingReg,
+      groupName: finalGroupName,
+      groupMembers: selectedStudents.map(s => ({
+        studentId: s.id,
+        name: s.name,
+        chestNumber: s.chestNumber,
+        admissionNo: s.admissionNo,
+        classNumber: s.classNumber
+      }))
+    };
+
     setRegistrations(prev =>
-      prev.map(r => {
-        if (r.id === registrationId) {
-          return {
-            ...r,
-            groupName: finalGroupName,
-            groupMembers: selectedStudents.map(s => ({
-              studentId: s.id,
-              name: s.name,
-              chestNumber: s.chestNumber,
-              admissionNo: s.admissionNo,
-              classNumber: s.classNumber
-            }))
-          };
-        }
-        return r;
-      })
+      prev.map(r => r.id === registrationId ? updatedReg : r)
     );
+    saveRegistrationDb(updatedReg).catch(console.error);
 
     logAudit(
       'UPDATE_GROUP' as any,
@@ -1063,6 +1138,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!reg) return { success: false, error: 'Registration not found.' };
 
     setRegistrations(prev => prev.filter(r => r.id !== registrationId));
+    deleteRegistrationDb(registrationId).catch(console.error);
     logAudit('WITHDRAW_REGISTRATION', 'REGISTRATION', `Withdrew registration for "${reg.programName}" (${reg.studentName || reg.groupName})`, performedBy, role, registrationId);
     return { success: true };
   };
@@ -1118,6 +1194,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     if (newRegs.length > 0) {
       setRegistrations(prev => [...prev, ...newRegs]);
+      saveRegistrationsBatchDb(newRegs).catch(console.error);
       logAudit(
         'REGISTER_INDIVIDUAL',
         'REGISTRATION',
@@ -1202,6 +1279,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     if (newRegs.length > 0) {
       setRegistrations(prev => [...prev, ...newRegs]);
+      saveRegistrationsBatchDb(newRegs).catch(console.error);
       logAudit(
         'REGISTER_GROUP',
         'REGISTRATION',
@@ -1249,7 +1327,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       publishedAt: isPublish ? new Date().toISOString() : resultData.publishedAt
     };
 
-    // Replace or insert atomically
+    // Replace or insert locally
     setResults(prev => {
       const existingIdx = prev.findIndex(r => r.programId === finalResult.programId);
       if (existingIdx >= 0) {
@@ -1272,6 +1350,9 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return p;
     }));
 
+    // Save directly to relational table in Supabase
+    saveResultDb(finalResult).catch(console.error);
+
     logAudit(
       isPublish ? 'PUBLISH_RESULT' : 'SUBMIT_RESULT',
       'RESULT',
@@ -1287,6 +1368,8 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const unpublishResult = (programId: string, performedBy: string, role: UserRole) => {
     const program = programs.find(p => p.id === programId);
     if (!program) return { success: false, error: 'Program not found.' };
+
+    const targetResult = results.find(r => r.programId === programId);
 
     setResults(prev => prev.map(r => {
       if (r.programId === programId) {
@@ -1309,6 +1392,14 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
       return p;
     }));
+
+    if (targetResult) {
+      saveResultDb({
+        ...targetResult,
+        status: 'DRAFT',
+        publishedAt: undefined
+      }).catch(console.error);
+    }
 
     logAudit(
       'UNPUBLISH_RESULT' as any,
@@ -1338,6 +1429,8 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
       return p;
     }));
+
+    deleteResultDb(programId).catch(console.error);
 
     logAudit(
       'DELETE_RESULT' as any,
@@ -1369,6 +1462,8 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     setScoringConfigs(nextScoringConfigs);
+    saveScoringConfigsDb(nextScoringConfigs).catch(console.error);
+
     if (progType === 'INDIVIDUAL') {
       setPositionConfigs(updatedPositions);
     }
@@ -1380,7 +1475,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const rProgType = prog?.programType || r.programType || 'INDIVIDUAL';
         if (rProgType !== progType) return r;
 
-        return {
+        const updatedResult = {
           ...r,
           entries: r.entries.map(ent => {
             const calc = calculateEntryPoints(ent.position, ent.grade, rProgType, nextScoringConfigs);
@@ -1392,6 +1487,8 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             };
           })
         };
+        saveResultDb(updatedResult).catch(console.error);
+        return updatedResult;
       })
     );
 
@@ -1415,6 +1512,8 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     setScoringConfigs(nextScoringConfigs);
+    saveScoringConfigsDb(nextScoringConfigs).catch(console.error);
+
     if (progType === 'INDIVIDUAL') {
       setGradeConfigs(updatedGrades);
     }
@@ -1426,7 +1525,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const rProgType = prog?.programType || r.programType || 'INDIVIDUAL';
         if (rProgType !== progType) return r;
 
-        return {
+        const updatedResult = {
           ...r,
           entries: r.entries.map(ent => {
             const calc = calculateEntryPoints(ent.position, ent.grade, rProgType, nextScoringConfigs);
@@ -1438,6 +1537,8 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             };
           })
         };
+        saveResultDb(updatedResult).catch(console.error);
+        return updatedResult;
       })
     );
 
@@ -1454,7 +1555,9 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const updateSettings = (newSettings: Partial<FestSettings>, performedBy: string, role: UserRole) => {
-    setSettings(prev => ({ ...prev, ...newSettings }));
+    const updated = { ...settings, ...newSettings };
+    setSettings(updated);
+    saveSettingsDb(updated).catch(console.error);
     logAudit('UPDATE_SETTINGS', 'SETTING', `Updated general fest settings`, performedBy, role);
   };
 

@@ -785,3 +785,280 @@ export async function saveCloudUsers(users: any[]) {
     return { success: false, error: err?.message || 'Network error' };
   }
 }
+
+// =========================================================================
+// DISCRETE ATOMIC MUTATIONS (High Performance, No Monolithic Bulk-Dump)
+// =========================================================================
+
+export async function saveStudentDb(student: Student) {
+  try {
+    const { error } = await supabase.from('students').upsert(mapStudentToDb(student));
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to save student:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function saveStudentsBatchDb(students: Student[]) {
+  try {
+    if (students.length === 0) return { success: true };
+    const { error } = await supabase.from('students').upsert(students.map(mapStudentToDb));
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to batch save students:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function deleteStudentDb(studentId: string) {
+  try {
+    const { error } = await supabase.from('students').delete().eq('id', studentId);
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to delete student:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function deleteStudentsBatchDb(studentIds: string[]) {
+  try {
+    if (studentIds.length === 0) return { success: true };
+    const { error } = await supabase.from('students').delete().in('id', studentIds);
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to batch delete students:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function saveTeamDb(team: Team) {
+  try {
+    const { error } = await supabase.from('teams').upsert(mapTeamToDb(team));
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to save team:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function deleteTeamDb(teamId: string) {
+  try {
+    const { error } = await supabase.from('teams').delete().eq('id', teamId);
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to delete team:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function saveProgramDb(program: Program) {
+  try {
+    const { error } = await supabase.from('programs').upsert(mapProgramToDb(program));
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to save program:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function saveProgramsBatchDb(programs: Program[]) {
+  try {
+    if (programs.length === 0) return { success: true };
+    const { error } = await supabase.from('programs').upsert(programs.map(mapProgramToDb));
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to batch save programs:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function deleteProgramDb(programId: string) {
+  try {
+    const { error } = await supabase.from('programs').delete().eq('id', programId);
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to delete program:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function deleteProgramsBatchDb(programIds: string[]) {
+  try {
+    if (programIds.length === 0) return { success: true };
+    const { error } = await supabase.from('programs').delete().in('id', programIds);
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to batch delete programs:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function saveRegistrationDb(registration: Registration) {
+  try {
+    const { error } = await supabase.from('registrations').upsert(mapRegistrationToDb(registration));
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to save registration:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function saveRegistrationsBatchDb(registrations: Registration[]) {
+  try {
+    if (registrations.length === 0) return { success: true };
+    const { error } = await supabase.from('registrations').upsert(registrations.map(mapRegistrationToDb));
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to batch save registrations:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function deleteRegistrationDb(registrationId: string) {
+  try {
+    const { error } = await supabase.from('registrations').delete().eq('id', registrationId);
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to delete registration:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function saveResultDb(result: ProgramResult) {
+  try {
+    const { error: resErr } = await supabase.from('results').upsert(mapResultToDb(result));
+    if (resErr) throw resErr;
+
+    // Also update program status directly
+    await supabase.from('programs').update({
+      result_status: result.status,
+      status: result.status === 'PUBLISHED' ? 'COMPLETED' : 'UPCOMING'
+    }).eq('id', result.programId);
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to save result:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function deleteResultDb(programId: string) {
+  try {
+    const { error } = await supabase.from('results').delete().eq('program_id', programId);
+    if (error) throw error;
+
+    await supabase.from('programs').update({
+      result_status: 'PENDING',
+      status: 'UPCOMING'
+    }).eq('id', programId);
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to delete result:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function saveSettingsDb(settings: FestSettings) {
+  try {
+    const { error } = await supabase.from('fest_settings').upsert(mapSettingsToDb(settings));
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to save settings:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function saveCategoryConfigDb(config: CategoryConfig) {
+  try {
+    const { error } = await supabase.from('category_configs').upsert(mapCategoryConfigToDb(config));
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to save category config:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function deleteCategoryConfigDb(configId: string) {
+  try {
+    const { error } = await supabase.from('category_configs').delete().eq('id', configId);
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to delete category config:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function saveClassMappingDb(mapping: ClassCategoryMapping) {
+  try {
+    const { error } = await supabase.from('class_mappings').upsert(mapClassMappingToDb(mapping), { onConflict: 'class_number' });
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to save class mapping:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function deleteClassMappingDb(mappingId: string) {
+  try {
+    const { error } = await supabase.from('class_mappings').delete().eq('id', mappingId);
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to delete class mapping:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function saveScoringConfigsDb(scoringConfigs: ScoringConfigMap) {
+  try {
+    const { error } = await supabase.from('scoring_configs').upsert({ id: 'current_scoring', data: scoringConfigs });
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to save scoring configs:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function saveAuditLogDb(log: AuditLog) {
+  try {
+    const { error } = await supabase.from('audit_logs').upsert(mapAuditLogToDb(log));
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to save audit log:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function saveLeaderboardCacheDb(leaderboard: any) {
+  try {
+    await supabase.from('fest_state').upsert({
+      id: 'result_cache_leaderboard',
+      data: leaderboard,
+      updated_at: new Date().toISOString()
+    });
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message };
+  }
+}
