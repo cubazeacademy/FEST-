@@ -14,9 +14,17 @@ import {
   INITIAL_USERS
 } from '../src/utils/seedData';
 
-const connectionString = 'postgresql://postgres.sebphzbptktohcisskht:Sinan751033@aws-0-ap-south-1.pooler.supabase.com:5432/postgres';
+// Read connection string from environment variables
+const connectionString = process.env.DATABASE_URL ||
+  (process.env.POSTGRES_USER && process.env.POSTGRES_HOST
+    ? `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD || ''}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT || 5432}/${process.env.POSTGRES_DATABASE || 'postgres'}`
+    : undefined);
 
 async function seedData() {
+  if (!connectionString) {
+    throw new Error('Missing DATABASE_URL or POSTGRES environment variables.');
+  }
+
   const client = new Client({
     connectionString,
     ssl: { rejectUnauthorized: false }

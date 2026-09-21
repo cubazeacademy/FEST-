@@ -7,20 +7,28 @@ import {
   INITIAL_SETTINGS
 } from '../src/utils/seedData';
 
-const connectionString = 'postgresql://postgres.sebphzbptktohcisskht:Sinan751033@aws-0-ap-south-1.pooler.supabase.com:5432/postgres';
+// Load connection string from environment variable
+const connectionString = process.env.DATABASE_URL ||
+  (process.env.POSTGRES_USER && process.env.POSTGRES_HOST
+    ? `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD || ''}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT || 5432}/${process.env.POSTGRES_DATABASE || 'postgres'}`
+    : undefined);
 
 const SUPER_ADMIN_USER = {
   id: 'usr_admin',
   username: 'admin',
-  password: 'password123',
+  password: process.env.INITIAL_ADMIN_PASSWORD || 'password123',
   name: 'Super Administrator',
   email: 'admin@festportal.edu',
-  role: 'SUPER_ADMIN',
+  role: 'SUPER_ADMIN' as const,
   isActive: true,
   avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80'
 };
 
 async function cleanupData() {
+  if (!connectionString) {
+    throw new Error('Missing DATABASE_URL or POSTGRES environment variables.');
+  }
+
   const client = new Client({
     connectionString,
     ssl: { rejectUnauthorized: false }
