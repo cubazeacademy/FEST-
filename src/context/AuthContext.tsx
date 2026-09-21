@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { User, UserRole } from '../types';
 import { INITIAL_USERS } from '../utils/seedData';
+import { supabase, USERS_STATE_KEY, fetchCloudUsers, saveCloudUsers } from '../lib/supabase';
 
 interface LoginResult {
   success: boolean;
@@ -43,6 +44,9 @@ const USERS_STORAGE_KEY = 'fest_app_users_v1';
 const SESSION_USER_ID_KEY = 'fest_session_active_user_id';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const isRemoteUpdatingRef = useRef(false);
+  const isInitialLoadDoneRef = useRef(false);
+
   // Load users from localStorage or fallback to INITIAL_USERS (with controller consolidation)
   const [allUsers, setAllUsers] = useState<User[]>(() => {
     try {
@@ -94,9 +98,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return PUBLIC_GUEST_USER; // Default to Public Guest so visitor lands on Public View first
   });
 
-  // Sync users to storage
+  // Supabase Initial Sync & Realtime Subscription
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCloudUsers() {
+      try {
+        const cloudUsers = await fetchCloudUsers();
+        if (!isMounted) return;
+
+        if (Array.isArray(cloudUsers) && cloudUsers.length > 0) {
+          isRemoteUpdatingRef.current = true;
+          setAllUsers(cloudUsers);
+          setTimeout(() => {
+            isRemoteUpdatingRef.current = false;
+          }, 200);
+        } else {
+          // Cloud empty, seed initial users
+          await saveCloudUsers(allUsers);
+        }
+      } catch (err) {
+        console.error('Failed to load users from cloud:', err);
+      } finally {
+        isInitialLoadDoneRef.current = true;
+      }
+    }
+
+    loadCloudUsers();
+
+    // Supabase Realtime for users
+    const channel = supabase
+      .channel('public:users_state')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'fest_state', filter: `id=eq.${USERS_STATE_KEY}` },
+        (payload) => {
+          const updated = payload.new as { id?: string; data?: any };
+          if (updated && Array.isArray(updated.data) && !isRemoteUpdatingRef.current) {
+            isRemoteUpdatingRef.current = true;
+            setAllUsers(updated.data);
+            setTimeout(() => {
+              isRemoteUpdatingRef.current = false;
+            }, 300);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Sync users to Supabase whenever allUsers changes
   useEffect(() => {
     localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(allUsers));
+
+    if (!isInitialLoadDoneRef.current || isRemoteUpdatingRef.current) return;
+
+    const timer = setTimeout(() => {
+      saveCloudUsers(allUsers);
+    }, 800);
+
+    return () => clearTimeout(timer);
   }, [allUsers]);
 
   // Sync session ID to storage

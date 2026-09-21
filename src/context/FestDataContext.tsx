@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { supabase, FEST_STATE_KEY, fetchCloudFestState, saveCloudFestState } from '../lib/supabase';
 import {
   AuditLog,
   CategoryConfig,
@@ -120,6 +121,11 @@ interface FestDataContextType {
   updatePositionConfig: (config: PositionPointConfig, performedBy: string, role: UserRole) => void;
   updateSettings: (newSettings: Partial<FestSettings>, performedBy: string, role: UserRole) => void;
 
+  // Supabase Cloud Sync
+  cloudStatus: 'connected' | 'syncing' | 'offline' | 'error';
+  lastSyncedAt: string | null;
+  syncWithCloud: () => Promise<void>;
+
   // Utilities
   resetToDefaultData: () => void;
   exportDatabaseJSON: () => string;
@@ -155,6 +161,12 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [positionConfigs, setPositionConfigs] = useState<PositionPointConfig[]>(() => scoringConfigs?.INDIVIDUAL?.positionConfigs || INITIAL_POSITION_CONFIGS);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => loadState('auditLogs', INITIAL_AUDIT_LOGS));
 
+  // Cloud Sync State
+  const [cloudStatus, setCloudStatus] = useState<'connected' | 'syncing' | 'offline' | 'error'>('syncing');
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const isRemoteUpdatingRef = useRef(false);
+  const isInitialLoadDoneRef = useRef(false);
+
   // Sync to LocalStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_PREFIX + 'settings', JSON.stringify(settings));
@@ -169,6 +181,178 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     localStorage.setItem(STORAGE_PREFIX + 'gradeConfigs', JSON.stringify(gradeConfigs));
     localStorage.setItem(STORAGE_PREFIX + 'positionConfigs', JSON.stringify(positionConfigs));
     localStorage.setItem(STORAGE_PREFIX + 'auditLogs', JSON.stringify(auditLogs));
+  }, [settings, teams, students, categoryConfigs, classMappings, programs, registrations, results, scoringConfigs, gradeConfigs, positionConfigs, auditLogs]);
+
+  // Initial Fetch from Supabase & Realtime Subscription
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCloudState() {
+      try {
+        setCloudStatus('syncing');
+        const cloudData = await fetchCloudFestState();
+        if (!isMounted) return;
+
+        if (cloudData && typeof cloudData === 'object') {
+          isRemoteUpdatingRef.current = true;
+          if (cloudData.settings) setSettings(cloudData.settings);
+          if (cloudData.teams) setTeams(cloudData.teams);
+          if (cloudData.students) setStudents(cloudData.students);
+          if (cloudData.categoryConfigs) setCategoryConfigs(cloudData.categoryConfigs);
+          if (cloudData.classMappings) setClassMappings(cloudData.classMappings);
+          if (cloudData.programs) setPrograms(cloudData.programs);
+          if (cloudData.registrations) setRegistrations(cloudData.registrations);
+          if (cloudData.results) setResults(cloudData.results);
+          if (cloudData.scoringConfigs) {
+            setScoringConfigs(cloudData.scoringConfigs);
+            if (cloudData.scoringConfigs.INDIVIDUAL) {
+              setGradeConfigs(cloudData.scoringConfigs.INDIVIDUAL.gradeConfigs || INITIAL_GRADE_CONFIGS);
+              setPositionConfigs(cloudData.scoringConfigs.INDIVIDUAL.positionConfigs || INITIAL_POSITION_CONFIGS);
+            }
+          }
+          if (cloudData.auditLogs) setAuditLogs(cloudData.auditLogs);
+
+          setCloudStatus('connected');
+          setLastSyncedAt(new Date().toLocaleTimeString());
+          setTimeout(() => {
+            isRemoteUpdatingRef.current = false;
+          }, 200);
+        } else {
+          // Supabase is empty, seed initial data to cloud
+          const payload = {
+            settings,
+            teams,
+            students,
+            categoryConfigs,
+            classMappings,
+            programs,
+            registrations,
+            results,
+            scoringConfigs,
+            gradeConfigs,
+            positionConfigs,
+            auditLogs
+          };
+          const res = await saveCloudFestState(payload);
+          if (res.success) {
+            setCloudStatus('connected');
+            setLastSyncedAt(new Date().toLocaleTimeString());
+          } else {
+            setCloudStatus('error');
+          }
+        }
+      } catch (err) {
+        console.error('Error connecting to Supabase:', err);
+        setCloudStatus('offline');
+      } finally {
+        isInitialLoadDoneRef.current = true;
+      }
+    }
+
+    loadCloudState();
+
+    // Supabase Realtime channel
+    const channel = supabase
+      .channel('public:fest_state')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'fest_state', filter: `id=eq.${FEST_STATE_KEY}` },
+        (payload) => {
+          const updated = payload.new as { id?: string; data?: any; updated_at?: string };
+          if (updated && updated.data && !isRemoteUpdatingRef.current) {
+            isRemoteUpdatingRef.current = true;
+            const d = updated.data;
+            if (d.settings) setSettings(d.settings);
+            if (d.teams) setTeams(d.teams);
+            if (d.students) setStudents(d.students);
+            if (d.categoryConfigs) setCategoryConfigs(d.categoryConfigs);
+            if (d.classMappings) setClassMappings(d.classMappings);
+            if (d.programs) setPrograms(d.programs);
+            if (d.registrations) setRegistrations(d.registrations);
+            if (d.results) setResults(d.results);
+            if (d.scoringConfigs) {
+              setScoringConfigs(d.scoringConfigs);
+              if (d.scoringConfigs.INDIVIDUAL) {
+                setGradeConfigs(d.scoringConfigs.INDIVIDUAL.gradeConfigs || INITIAL_GRADE_CONFIGS);
+                setPositionConfigs(d.scoringConfigs.INDIVIDUAL.positionConfigs || INITIAL_POSITION_CONFIGS);
+              }
+            }
+            if (d.auditLogs) setAuditLogs(d.auditLogs);
+
+            setCloudStatus('connected');
+            setLastSyncedAt(new Date(updated.updated_at || Date.now()).toLocaleTimeString());
+
+            setTimeout(() => {
+              isRemoteUpdatingRef.current = false;
+            }, 300);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Sync to Supabase whenever local state changes
+  useEffect(() => {
+    if (!isInitialLoadDoneRef.current || isRemoteUpdatingRef.current) return;
+
+    const timer = setTimeout(async () => {
+      setCloudStatus('syncing');
+      const payload = {
+        settings,
+        teams,
+        students,
+        categoryConfigs,
+        classMappings,
+        programs,
+        registrations,
+        results,
+        scoringConfigs,
+        gradeConfigs,
+        positionConfigs,
+        auditLogs
+      };
+
+      const res = await saveCloudFestState(payload);
+      if (res.success) {
+        setCloudStatus('connected');
+        setLastSyncedAt(new Date().toLocaleTimeString());
+      } else {
+        setCloudStatus('error');
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [settings, teams, students, categoryConfigs, classMappings, programs, registrations, results, scoringConfigs, gradeConfigs, positionConfigs, auditLogs]);
+
+  // Manual trigger
+  const syncWithCloud = useCallback(async () => {
+    setCloudStatus('syncing');
+    const payload = {
+      settings,
+      teams,
+      students,
+      categoryConfigs,
+      classMappings,
+      programs,
+      registrations,
+      results,
+      scoringConfigs,
+      gradeConfigs,
+      positionConfigs,
+      auditLogs
+    };
+    const res = await saveCloudFestState(payload);
+    if (res.success) {
+      setCloudStatus('connected');
+      setLastSyncedAt(new Date().toLocaleTimeString());
+    } else {
+      setCloudStatus('error');
+    }
   }, [settings, teams, students, categoryConfigs, classMappings, programs, registrations, results, scoringConfigs, gradeConfigs, positionConfigs, auditLogs]);
 
   // Helper for recording audit logs
@@ -1404,7 +1588,10 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         updateSettings,
         resetToDefaultData,
         exportDatabaseJSON,
-        importDatabaseJSON
+        importDatabaseJSON,
+        cloudStatus,
+        lastSyncedAt,
+        syncWithCloud
       }}
     >
       {children}

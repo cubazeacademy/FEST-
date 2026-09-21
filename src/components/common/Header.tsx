@@ -13,7 +13,11 @@ import {
   LogOut,
   LogIn,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Cloud,
+  RefreshCw,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -42,7 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
     isPublic
   } = useAuth();
 
-  const { settings, updateSettings } = useFestData();
+  const { settings, updateSettings, cloudStatus, lastSyncedAt, syncWithCloud } = useFestData();
 
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -123,18 +127,54 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             {/* Live Registration Status Pill */}
-            <div className="hidden md:flex items-center ml-4">
+            <div className="hidden md:flex items-center ml-2">
               <button
                 onClick={toggleRegistration}
                 title={isSuperAdmin ? 'Click to toggle registration state' : undefined}
-                className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-semibold border transition-all ${settings.registrationOpen
+                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${settings.registrationOpen
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100/70 shadow-xs'
                     : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100/70 shadow-xs'
                   } ${isSuperAdmin ? 'cursor-pointer' : 'cursor-default'}`}
               >
-                <span className={`w-2.5 h-2.5 rounded-full ${settings.registrationOpen ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                <span className={`w-2 h-2 rounded-full ${settings.registrationOpen ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
                 {settings.registrationOpen ? 'Registration OPEN' : 'Registration CLOSED'}
-                {isSuperAdmin && <span className="text-xs font-normal opacity-70 ml-0.5">(Toggle)</span>}
+                {isSuperAdmin && <span className="text-[10px] font-normal opacity-70 ml-0.5">(Toggle)</span>}
+              </button>
+            </div>
+
+            {/* Supabase Cloud Live Status Indicator */}
+            <div className="hidden xl:flex items-center">
+              <button
+                onClick={() => syncWithCloud()}
+                title={lastSyncedAt ? `Supabase Cloud Connected (Last synced: ${lastSyncedAt}). Click to force sync.` : 'Click to sync with Supabase'}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all cursor-pointer ${
+                  cloudStatus === 'connected'
+                    ? 'bg-emerald-50/90 text-emerald-700 border-emerald-200/80 hover:bg-emerald-100'
+                    : cloudStatus === 'syncing'
+                    ? 'bg-sky-50 text-sky-700 border-sky-200 animate-pulse'
+                    : cloudStatus === 'error'
+                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    : 'bg-slate-100 text-slate-600 border-slate-200'
+                }`}
+              >
+                {cloudStatus === 'syncing' ? (
+                  <RefreshCw className="w-3 h-3 animate-spin text-sky-600" />
+                ) : cloudStatus === 'connected' ? (
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                ) : cloudStatus === 'error' ? (
+                  <AlertCircle className="w-3 h-3 text-amber-600" />
+                ) : (
+                  <Cloud className="w-3 h-3 text-slate-500" />
+                )}
+                <span>
+                  {cloudStatus === 'connected'
+                    ? 'Supabase Live'
+                    : cloudStatus === 'syncing'
+                    ? 'Syncing Cloud...'
+                    : cloudStatus === 'error'
+                    ? 'Cloud Offline'
+                    : 'Local Cache'}
+                </span>
               </button>
             </div>
           </div>
