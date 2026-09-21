@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { supabase, FEST_STATE_KEY, fetchCloudFestState, saveCloudFestState } from '../lib/supabase';
+import { supabase, FEST_STATE_KEY, fetchFullRelationalData, saveFullRelationalData } from '../lib/supabase';
 import {
   AuditLog,
   CategoryConfig,
@@ -190,7 +190,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     async function loadCloudState() {
       try {
         setCloudStatus('syncing');
-        const cloudData = await fetchCloudFestState();
+        const cloudData = await fetchFullRelationalData();
         if (!isMounted) return;
 
         if (cloudData && typeof cloudData === 'object') {
@@ -218,7 +218,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             isRemoteUpdatingRef.current = false;
           }, 200);
         } else {
-          // Supabase is empty, seed initial data to cloud
+          // Seed initial state to relational tables
           const payload = {
             settings,
             teams,
@@ -229,11 +229,9 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             registrations,
             results,
             scoringConfigs,
-            gradeConfigs,
-            positionConfigs,
             auditLogs
           };
-          const res = await saveCloudFestState(payload);
+          const res = await saveFullRelationalData(payload);
           if (res.success) {
             setCloudStatus('connected');
             setLastSyncedAt(new Date().toLocaleTimeString());
@@ -312,19 +310,17 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         registrations,
         results,
         scoringConfigs,
-        gradeConfigs,
-        positionConfigs,
         auditLogs
       };
 
-      const res = await saveCloudFestState(payload);
+      const res = await saveFullRelationalData(payload);
       if (res.success) {
         setCloudStatus('connected');
         setLastSyncedAt(new Date().toLocaleTimeString());
       } else {
         setCloudStatus('error');
       }
-    }, 800);
+    }, 600);
 
     return () => clearTimeout(timer);
   }, [settings, teams, students, categoryConfigs, classMappings, programs, registrations, results, scoringConfigs, gradeConfigs, positionConfigs, auditLogs]);
@@ -342,11 +338,9 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       registrations,
       results,
       scoringConfigs,
-      gradeConfigs,
-      positionConfigs,
       auditLogs
     };
-    const res = await saveCloudFestState(payload);
+    const res = await saveFullRelationalData(payload);
     if (res.success) {
       setCloudStatus('connected');
       setLastSyncedAt(new Date().toLocaleTimeString());

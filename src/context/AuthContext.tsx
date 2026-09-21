@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { User, UserRole } from '../types';
 import { INITIAL_USERS } from '../utils/seedData';
-import { supabase, USERS_STATE_KEY, fetchCloudUsers, saveCloudUsers } from '../lib/supabase';
+import { supabase, USERS_STATE_KEY, fetchRelationalUsers, saveRelationalUsers } from '../lib/supabase';
 
 interface LoginResult {
   success: boolean;
@@ -87,7 +87,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     async function loadCloudUsers() {
       try {
-        const cloudUsers = await fetchCloudUsers();
+        const cloudUsers = await fetchRelationalUsers();
         if (!isMounted) return;
 
         if (Array.isArray(cloudUsers) && cloudUsers.length > 0) {
@@ -97,8 +97,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             isRemoteUpdatingRef.current = false;
           }, 200);
         } else {
-          // Cloud empty, seed initial users
-          await saveCloudUsers(allUsers);
+          // Seed initial users to relational table
+          await saveRelationalUsers(allUsers);
         }
       } catch (err) {
         console.error('Failed to load users from cloud:', err);
@@ -141,8 +141,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!isInitialLoadDoneRef.current || isRemoteUpdatingRef.current) return;
 
     const timer = setTimeout(() => {
-      saveCloudUsers(allUsers);
-    }, 800);
+      saveRelationalUsers(allUsers);
+    }, 600);
 
     return () => clearTimeout(timer);
   }, [allUsers]);
