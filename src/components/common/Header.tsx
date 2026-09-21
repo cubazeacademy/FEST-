@@ -320,82 +320,85 @@ export const Header: React.FC<HeaderProps> = ({
                       <p className="text-xs text-slate-500 truncate mt-0.5">{currentUser.email}</p>
                     </div>
 
-                    <div className="space-y-1.5 max-h-64 overflow-y-auto custom-scrollbar">
-                      <div className="text-[10px] font-bold text-slate-400 px-2 pt-1 uppercase tracking-wider">Switch Account Role</div>
-                      {allUsers.map(u => {
-                        const uTeam = teams.find(
-                          t =>
-                            t.id === u.teamId ||
-                            t.name.toLowerCase() === u.teamId?.toLowerCase() ||
-                            t.code.toLowerCase() === u.teamId?.toLowerCase() ||
-                            (u.username &&
-                              (u.username.toLowerCase().includes(t.code.toLowerCase()) ||
-                                u.username.toLowerCase().includes(t.name.toLowerCase())))
-                        );
+                    {/* Only Super Admin can switch account roles or jump between houses */}
+                    {isSuperAdmin && (
+                      <div className="space-y-1.5 max-h-64 overflow-y-auto custom-scrollbar">
+                        <div className="text-[10px] font-bold text-slate-400 px-2 pt-1 uppercase tracking-wider">Switch Account Role</div>
+                        {allUsers.map(u => {
+                          const uTeam = teams.find(
+                            t =>
+                              t.id === u.teamId ||
+                              t.name.toLowerCase() === u.teamId?.toLowerCase() ||
+                              t.code.toLowerCase() === u.teamId?.toLowerCase() ||
+                              (u.username &&
+                                (u.username.toLowerCase().includes(t.code.toLowerCase()) ||
+                                  u.username.toLowerCase().includes(t.name.toLowerCase())))
+                          );
 
-                        return (
-                          <button
-                            key={u.id}
-                            type="button"
-                            onClick={() => {
-                              switchUser(u.id);
-                              setIsUserMenuOpen(false);
-                              if (u.role === 'SUPER_ADMIN' || u.role === 'ADMIN') setActiveTab('admin_dashboard');
-                              else if (u.role === 'TEAM_LEADER') setActiveTab('tl_my_team');
-                              else if (u.role === 'CONTROLLER') setActiveTab('ctrl_assigned');
-                              else setActiveTab('public_live');
-                            }}
-                            className={`w-full text-left flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer ${
-                              currentUser.id === u.id ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-100' : 'text-slate-700 hover:bg-slate-50'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2 min-w-0 pr-2">
-                              <span className="truncate">{u.name}</span>
-                              {uTeam && (
-                                <span
-                                  className="text-[9px] font-bold px-1.5 py-0.2 rounded border shrink-0"
-                                  style={{
-                                    backgroundColor: `${uTeam.color || '#6366f1'}15`,
-                                    borderColor: `${uTeam.color || '#6366f1'}35`,
-                                    color: uTeam.color || '#6366f1'
-                                  }}
-                                >
-                                  {uTeam.name}
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-xs font-mono text-slate-400 shrink-0">@{u.username}</span>
-                          </button>
-                        );
-                      })}
-
-                      {/* Quick Switch to Teams / Houses */}
-                      {teams.length > 0 && (
-                        <div className="pt-2 border-t border-slate-100 mt-2 space-y-1">
-                          <div className="text-[10px] font-bold text-slate-400 px-2 uppercase tracking-wider">Switch to House Portal</div>
-                          {teams.map(t => (
+                          return (
                             <button
-                              key={t.id}
+                              key={u.id}
                               type="button"
                               onClick={() => {
-                                switchRole('TEAM_LEADER', t.id);
+                                switchUser(u.id);
                                 setIsUserMenuOpen(false);
-                                setActiveTab('tl_my_team');
+                                if (u.role === 'SUPER_ADMIN' || u.role === 'ADMIN') setActiveTab('admin_dashboard');
+                                else if (u.role === 'TEAM_LEADER') setActiveTab('tl_my_team');
+                                else if (u.role === 'CONTROLLER') setActiveTab('ctrl_assigned');
+                                else setActiveTab('public_live');
                               }}
-                              className={`w-full text-left flex items-center justify-between px-3 py-1.5 rounded-xl text-xs transition-colors cursor-pointer ${
-                                currentUserTeam?.id === t.id ? 'bg-indigo-50 text-indigo-700 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                              className={`w-full text-left flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer ${
+                                currentUser.id === u.id ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-100' : 'text-slate-700 hover:bg-slate-50'
                               }`}
                             >
-                              <span className="flex items-center gap-2 font-medium truncate">
-                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#6366f1' }} />
-                                <span className="truncate">{t.name}</span>
-                              </span>
-                              <span className="text-[10px] font-mono font-bold text-slate-400 shrink-0 ml-1.5">{t.code}</span>
+                              <div className="flex items-center gap-2 min-w-0 pr-2">
+                                <span className="truncate">{u.name}</span>
+                                {uTeam && (
+                                  <span
+                                    className="text-[9px] font-bold px-1.5 py-0.2 rounded border shrink-0"
+                                    style={{
+                                      backgroundColor: `${uTeam.color || '#6366f1'}15`,
+                                      borderColor: `${uTeam.color || '#6366f1'}35`,
+                                      color: uTeam.color || '#6366f1'
+                                    }}
+                                  >
+                                    {uTeam.name}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-xs font-mono text-slate-400 shrink-0">@{u.username}</span>
                             </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                          );
+                        })}
+
+                        {/* Quick Switch to Teams / Houses */}
+                        {teams.length > 0 && (
+                          <div className="pt-2 border-t border-slate-100 mt-2 space-y-1">
+                            <div className="text-[10px] font-bold text-slate-400 px-2 uppercase tracking-wider">Switch to House Portal</div>
+                            {teams.map(t => (
+                              <button
+                                key={t.id}
+                                type="button"
+                                onClick={() => {
+                                  switchRole('TEAM_LEADER', t.id);
+                                  setIsUserMenuOpen(false);
+                                  setActiveTab('tl_my_team');
+                                }}
+                                className={`w-full text-left flex items-center justify-between px-3 py-1.5 rounded-xl text-xs transition-colors cursor-pointer ${
+                                  currentUserTeam?.id === t.id ? 'bg-indigo-50 text-indigo-700 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                                }`}
+                              >
+                                <span className="flex items-center gap-2 font-medium truncate">
+                                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#6366f1' }} />
+                                  <span className="truncate">{t.name}</span>
+                                </span>
+                                <span className="text-[10px] font-mono font-bold text-slate-400 shrink-0 ml-1.5">{t.code}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <div className="pt-2 border-t border-slate-100 mt-2">
                       <button

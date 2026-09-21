@@ -96,8 +96,25 @@ export function App() {
       );
     }
 
+    // Route-level permission guards:
+    if (activeTab.startsWith('admin_') && !isSuperAdmin) {
+      if (isTeamLeader) return <TeamLeaderDashboard setActiveTab={setActiveTab} />;
+      if (isController) return <ControllerDashboard setActiveTab={setActiveTab} setSelectedProgramForEntry={setSelectedProgramForEntry} />;
+      return <LiveResultsFeed />;
+    }
+
+    if (activeTab.startsWith('tl_') && !isTeamLeader && !isSuperAdmin) {
+      if (isController) return <ControllerDashboard setActiveTab={setActiveTab} setSelectedProgramForEntry={setSelectedProgramForEntry} />;
+      return <LiveResultsFeed />;
+    }
+
+    if (activeTab.startsWith('ctrl_') && !isController && !isSuperAdmin) {
+      if (isTeamLeader) return <TeamLeaderDashboard setActiveTab={setActiveTab} />;
+      return <LiveResultsFeed />;
+    }
+
     switch (activeTab) {
-      // Admin views
+      // Admin views (Strictly for Super Admin / Admin)
       case 'admin_dashboard':
         return <AdminDashboard setActiveTab={setActiveTab} />;
       case 'admin_students':

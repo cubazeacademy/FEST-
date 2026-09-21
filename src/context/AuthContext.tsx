@@ -203,6 +203,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setCurrentUser(PUBLIC_GUEST_USER);
       return;
     }
+    // Only administrators are allowed to switch accounts/roles
+    if (currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'ADMIN') {
+      console.warn('Unauthorized account switch blocked.');
+      return;
+    }
     const user = allUsers.find(u => u.id === userId);
     if (user) {
       setCurrentUser(user);
@@ -212,6 +217,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const switchRole = (role: UserRole, teamId?: string) => {
     if (role === 'PUBLIC') {
       setCurrentUser(PUBLIC_GUEST_USER);
+      return;
+    }
+    // Only administrators are allowed to switch roles
+    if (currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'ADMIN') {
+      console.warn('Unauthorized role switch blocked.');
       return;
     }
     if (role === 'TEAM_LEADER' && teamId) {
