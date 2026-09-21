@@ -62,123 +62,15 @@ export const INITIAL_USERS: User[] = [
     id: 'usr_admin',
     username: 'admin',
     password: 'password123',
-    name: 'Dr. Alexander Vance (Super Admin)',
+    name: 'Super Administrator',
     email: 'admin@festportal.edu',
     role: 'SUPER_ADMIN',
     isActive: true,
     avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80'
-  },
-  {
-    id: 'usr_lead_red',
-    username: 'ruby_leader',
-    password: 'password123',
-    name: 'Elena Rostova (Ruby Leader)',
-    email: 'ruby.leader@festportal.edu',
-    role: 'TEAM_LEADER',
-    teamId: 'team_red',
-    isActive: true,
-    avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&auto=format&fit=crop&q=80'
-  },
-  {
-    id: 'usr_lead_blue',
-    username: 'sapphire_leader',
-    password: 'password123',
-    name: 'Marcus Chen (Sapphire Leader)',
-    email: 'sapphire.leader@festportal.edu',
-    role: 'TEAM_LEADER',
-    teamId: 'team_blue',
-    isActive: true,
-    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80'
-  },
-  {
-    id: 'usr_lead_green',
-    username: 'emerald_leader',
-    password: 'password123',
-    name: 'Aisha Al-Mansoor (Emerald Leader)',
-    email: 'emerald.leader@festportal.edu',
-    role: 'TEAM_LEADER',
-    teamId: 'team_green',
-    isActive: true,
-    avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=120&auto=format&fit=crop&q=80'
-  },
-  {
-    id: 'usr_lead_yellow',
-    username: 'topaz_leader',
-    password: 'password123',
-    name: 'Julian Sterling (Topaz Leader)',
-    email: 'topaz.leader@festportal.edu',
-    role: 'TEAM_LEADER',
-    teamId: 'team_yellow',
-    isActive: true,
-    avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=120&auto=format&fit=crop&q=80'
-  },
-  {
-    id: 'usr_ctrl_main',
-    username: 'controller',
-    password: 'password123',
-    name: 'Official Event Controller',
-    email: 'controller@festportal.edu',
-    role: 'CONTROLLER',
-    assignedProgramIds: [],
-    isActive: true,
-    avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=120&auto=format&fit=crop&q=80'
   }
 ];
 
-export const INITIAL_TEAMS: Team[] = [
-  {
-    id: 'team_red',
-    name: 'Ruby Phoenix',
-    code: 'RUBY',
-    color: '#ef4444',
-    bgClass: 'bg-red-500/10 text-red-500 border-red-500/30',
-    borderClass: 'border-red-500',
-    leaderId: 'usr_lead_red',
-    leaderName: 'Elena Rostova',
-    leaderEmail: 'ruby.leader@festportal.edu',
-    motto: 'Rising Fierce from the Ashes',
-    status: 'ACTIVE'
-  },
-  {
-    id: 'team_blue',
-    name: 'Sapphire Titans',
-    code: 'SAPPHIRE',
-    color: '#3b82f6',
-    bgClass: 'bg-blue-500/10 text-blue-500 border-blue-500/30',
-    borderClass: 'border-blue-500',
-    leaderId: 'usr_lead_blue',
-    leaderName: 'Marcus Chen',
-    leaderEmail: 'sapphire.leader@festportal.edu',
-    motto: 'Boundless Wisdom, Infinite Strength',
-    status: 'ACTIVE'
-  },
-  {
-    id: 'team_green',
-    name: 'Emerald Dragons',
-    code: 'EMERALD',
-    color: '#10b981',
-    bgClass: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30',
-    borderClass: 'border-emerald-500',
-    leaderId: 'usr_lead_green',
-    leaderName: 'Aisha Al-Mansoor',
-    leaderEmail: 'emerald.leader@festportal.edu',
-    motto: 'Unstoppable Vitality and Power',
-    status: 'ACTIVE'
-  },
-  {
-    id: 'team_yellow',
-    name: 'Topaz Warriors',
-    code: 'TOPAZ',
-    color: '#f59e0b',
-    bgClass: 'bg-amber-500/10 text-amber-500 border-amber-500/30',
-    borderClass: 'border-amber-500',
-    leaderId: 'usr_lead_yellow',
-    leaderName: 'Julian Sterling',
-    leaderEmail: 'topaz.leader@festportal.edu',
-    motto: 'Courage, Radiance, and Glory',
-    status: 'ACTIVE'
-  }
-];
+export const INITIAL_TEAMS: Team[] = [];
 
 export const INITIAL_CATEGORY_CONFIGS: CategoryConfig[] = [
   {

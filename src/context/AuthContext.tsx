@@ -47,32 +47,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isRemoteUpdatingRef = useRef(false);
   const isInitialLoadDoneRef = useRef(false);
 
-  // Load users from localStorage or fallback to INITIAL_USERS (with controller consolidation)
+  // Load users from localStorage or fallback to INITIAL_USERS
   const [allUsers, setAllUsers] = useState<User[]>(() => {
     try {
       const saved = localStorage.getItem(USERS_STORAGE_KEY);
       if (saved) {
         const parsed: User[] = JSON.parse(saved);
-        // Filter out old legacy 3 controllers and ensure unified controller exists
-        const nonLegacy = parsed.filter(
-          u => !['usr_ctrl_stage', 'usr_ctrl_nonstage', 'usr_ctrl_sports', 'stage_ctrl', 'nonstage_ctrl', 'sports_ctrl'].includes(u.id) &&
-               !['stage_ctrl', 'nonstage_ctrl', 'sports_ctrl'].includes(u.username)
-        );
-        const hasController = nonLegacy.some(u => u.username === 'controller' || u.id === 'usr_ctrl_main');
-        if (!hasController) {
-          const unifiedCtrl = INITIAL_USERS.find(u => u.username === 'controller') || {
-            id: 'usr_ctrl_main',
-            username: 'controller',
-            password: 'password123',
-            name: 'Official Event Controller',
-            email: 'controller@festportal.edu',
-            role: 'CONTROLLER' as UserRole,
-            assignedProgramIds: [],
-            isActive: true
-          };
-          nonLegacy.push(unifiedCtrl);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
         }
-        return nonLegacy;
       }
     } catch (e) {
       console.error('Failed to load users from localStorage', e);
