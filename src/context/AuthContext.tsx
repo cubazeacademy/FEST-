@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { User, UserRole } from '../types';
+import { User, UserRole, Team } from '../types';
 import { INITIAL_USERS } from '../utils/seedData';
 import { supabase, USERS_STATE_KEY, fetchRelationalUsers, saveRelationalUsers } from '../lib/supabase';
 
@@ -17,7 +17,8 @@ interface AuthContextType {
   logout: () => void;
   switchUser: (userId: string) => void;
   switchRole: (role: UserRole, teamId?: string) => void;
-  addUser: (userData: Omit<User, 'id'>) => { success: boolean; error?: string };
+  syncTeamUsers: (teamsList: Team[]) => void;
+  addUser: (userData: Omit<User, 'id'> & { id?: string }) => { success: boolean; error?: string };
   updateUser: (user: User) => { success: boolean; error?: string };
   deleteUser: (userId: string) => { success: boolean; error?: string };
   toggleUserStatus: (userId: string) => void;
@@ -245,21 +246,81 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Synchronize team leader accounts for all houses/teams
+  const syncTeamUsers = (teamsList: Team[]) => {
+    if (!teamsList || teamsList.length === 0) return;
+
+    setAllUsers(prevUsers => {
+      let changed = false;
+      const updated = [...prevUsers];
+
+      teamsList.forEach(t => {
+        const existingIdx = updated.findIndex(
+          u =>
+            u.role === 'TEAM_LEADER' &&
+            (u.teamId === t.id ||
+              u.teamId?.toLowerCase() === t.code.toLowerCase() ||
+              u.teamId?.toLowerCase() === t.name.toLowerCase() ||
+              (u.username &&
+                (u.username.toLowerCase().includes(t.code.toLowerCase()) ||
+                  u.username.toLowerCase().includes(t.name.toLowerCase()))))
+        );
+
+        const targetUsername = `leader_${t.code.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+        const targetName = t.leaderName || `${t.name} Leader`;
+        const targetEmail = t.leaderEmail || `${t.code.toLowerCase()}@festportal.edu`;
+
+        if (existingIdx >= 0) {
+          const existing = updated[existingIdx];
+          if (
+            existing.teamId !== t.id ||
+            existing.username.startsWith('leader_team17') ||
+            (t.leaderName && existing.name !== t.leaderName) ||
+            (t.leaderEmail && existing.email !== t.leaderEmail)
+          ) {
+            updated[existingIdx] = {
+              ...existing,
+              teamId: t.id,
+              name: targetName,
+              email: targetEmail,
+              username: existing.username.startsWith('leader_team17') ? targetUsername : existing.username
+            };
+            changed = true;
+          }
+        } else {
+          updated.push({
+            id: `usr_tl_${t.id}`,
+            username: targetUsername,
+            password: 'password123',
+            name: targetName,
+            email: targetEmail,
+            role: 'TEAM_LEADER',
+            teamId: t.id,
+            isActive: true
+          });
+          changed = true;
+        }
+      });
+
+      return changed ? updated : prevUsers;
+    });
+  };
+
   // User Management Methods
-  const addUser = (userData: Omit<User, 'id'>) => {
+  const addUser = (userData: Omit<User, 'id'> & { id?: string }) => {
     const cleanUsername = userData.username.trim().toLowerCase();
-    if (allUsers.some(u => u.username.toLowerCase() === cleanUsername)) {
+    if (allUsers.some(u => u.username.toLowerCase() === cleanUsername && u.id !== userData.id)) {
       return { success: false, error: `Username "${userData.username}" is already taken.` };
     }
 
     const newUser: User = {
       ...userData,
-      id: 'usr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
+      id: userData.id || ('usr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5)),
       username: cleanUsername,
       isActive: userData.isActive !== undefined ? userData.isActive : true
     };
 
-    setAllUsers(prev => [...prev, newUser]);
+    setAllUsers(prev => [...prev.filter(u => u.id !== newUser.id), newUser]);
     return { success: true };
   };
 
@@ -318,6 +379,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         switchUser,
         switchRole,
+        syncTeamUsers,
         addUser,
         updateUser,
         deleteUser,

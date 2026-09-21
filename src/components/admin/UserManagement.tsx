@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useFestData } from '../../context/FestDataContext';
 import { User, UserRole } from '../../types';
@@ -31,10 +31,18 @@ export const UserManagement: React.FC = () => {
     updateUser,
     deleteUser,
     toggleUserStatus,
-    resetUserPassword
+    resetUserPassword,
+    syncTeamUsers
   } = useAuth();
 
   const { teams, programs } = useFestData();
+
+  // Auto-sync team leader accounts for all active teams
+  useEffect(() => {
+    if (teams && teams.length > 0) {
+      syncTeamUsers(teams);
+    }
+  }, [teams]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('ALL');
@@ -301,7 +309,15 @@ export const UserManagement: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
               {filteredUsers.map(user => {
-                const team = teams.find(t => t.id === user.teamId);
+                const team = teams.find(
+                  t =>
+                    t.id === user.teamId ||
+                    t.name.toLowerCase() === user.teamId?.toLowerCase() ||
+                    t.code.toLowerCase() === user.teamId?.toLowerCase() ||
+                    (user.username &&
+                      (user.username.toLowerCase().includes(t.code.toLowerCase()) ||
+                        user.username.toLowerCase().includes(t.name.toLowerCase())))
+                );
                 const isCurrent = currentUser.id === user.id;
                 const userPassword = user.password || 'password123';
                 const userPassVisible = isPasswordVisible(user.id);

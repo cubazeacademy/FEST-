@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 export const TeamManagement: React.FC = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, allUsers, addUser, updateUser, deleteUser, syncTeamUsers } = useAuth();
   const { teams, students, teamLeaderboard, addTeam, updateTeam, deleteTeam } = useFestData();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -68,6 +68,17 @@ export const TeamManagement: React.FC = () => {
   const handleConfirmDelete = () => {
     if (!teamToDelete) return;
     deleteTeam(teamToDelete.id, currentUser.name, currentUser.role);
+    const associatedUser = allUsers.find(
+      u =>
+        u.role === 'TEAM_LEADER' &&
+        (u.teamId === teamToDelete.id ||
+          u.teamId?.toLowerCase() === teamToDelete.code.toLowerCase() ||
+          u.teamId?.toLowerCase() === teamToDelete.name.toLowerCase() ||
+          (u.username && u.username.toLowerCase().includes(teamToDelete.code.toLowerCase())))
+    );
+    if (associatedUser) {
+      deleteUser(associatedUser.id);
+    }
     setIsDeleteModalOpen(false);
     setTeamToDelete(null);
     if (isModalOpen && editingTeam?.id === teamToDelete.id) {
@@ -78,31 +89,55 @@ export const TeamManagement: React.FC = () => {
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingTeam) {
-      updateTeam(
-        {
-          ...editingTeam,
-          name: formData.name.trim(),
-          code: formData.code.trim().toUpperCase(),
-          color: formData.color,
-          leaderName: formData.leaderName.trim(),
-          leaderEmail: formData.leaderEmail.trim(),
-          leaderPhone: formData.leaderPhone.trim() || undefined,
-          motto: formData.motto.trim() || undefined
-        },
-        currentUser.name,
-        currentUser.role
+      const updatedTeamObj = {
+        ...editingTeam,
+        name: formData.name.trim(),
+        code: formData.code.trim().toUpperCase(),
+        color: formData.color,
+        leaderName: formData.leaderName.trim(),
+        leaderEmail: formData.leaderEmail.trim(),
+        leaderPhone: formData.leaderPhone.trim() || undefined,
+        motto: formData.motto.trim() || undefined
+      };
+      updateTeam(updatedTeamObj, currentUser.name, currentUser.role);
+
+      const targetUsername = `leader_${updatedTeamObj.code.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+      const associatedUser = allUsers.find(
+        u =>
+          u.role === 'TEAM_LEADER' &&
+          (u.teamId === editingTeam.id ||
+            u.teamId?.toLowerCase() === editingTeam.code.toLowerCase() ||
+            u.teamId?.toLowerCase() === editingTeam.name.toLowerCase() ||
+            (u.username &&
+              (u.username.toLowerCase().includes(editingTeam.code.toLowerCase()) ||
+                u.username.toLowerCase().includes(editingTeam.name.toLowerCase()))))
       );
+      if (associatedUser) {
+        updateUser({
+          ...associatedUser,
+          name: updatedTeamObj.leaderName || `${updatedTeamObj.name} Leader`,
+          email: updatedTeamObj.leaderEmail || `${updatedTeamObj.code.toLowerCase()}@festportal.edu`,
+          teamId: updatedTeamObj.id,
+          username: associatedUser.username.startsWith('leader_team17') ? targetUsername : associatedUser.username
+        });
+      }
     } else {
+      const newTeamCode = formData.code.trim().toUpperCase();
+      const newTeamName = formData.name.trim();
+      const newTeamLeaderName = formData.leaderName.trim() || `${newTeamName} Leader`;
+      const newTeamLeaderEmail = formData.leaderEmail.trim() || `${newTeamCode.toLowerCase()}@festportal.edu`;
+      const newTeamId = 'team_' + Date.now();
+
       addTeam(
         {
-          name: formData.name.trim(),
-          code: formData.code.trim().toUpperCase(),
+          name: newTeamName,
+          code: newTeamCode,
           color: formData.color,
           bgClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
           borderClass: 'border-indigo-500',
           leaderId: 'lead_' + Date.now(),
-          leaderName: formData.leaderName.trim(),
-          leaderEmail: formData.leaderEmail.trim(),
+          leaderName: newTeamLeaderName,
+          leaderEmail: newTeamLeaderEmail,
           leaderPhone: formData.leaderPhone.trim() || undefined,
           motto: formData.motto.trim() || undefined,
           status: 'ACTIVE'
@@ -110,6 +145,17 @@ export const TeamManagement: React.FC = () => {
         currentUser.name,
         currentUser.role
       );
+
+      addUser({
+        id: `usr_tl_${newTeamId}`,
+        username: `leader_${newTeamCode.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+        password: 'password123',
+        name: newTeamLeaderName,
+        email: newTeamLeaderEmail,
+        role: 'TEAM_LEADER',
+        teamId: newTeamId,
+        isActive: true
+      });
     }
     setIsModalOpen(false);
   };
