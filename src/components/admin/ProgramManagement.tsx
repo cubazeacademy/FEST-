@@ -25,12 +25,27 @@ import {
   XCircle,
   AlertCircle,
   CheckCircle2,
-  FileText
+  FileText,
+  CheckSquare,
+  Square,
+  X,
+  AlertTriangle,
+  Layers,
+  ShieldAlert
 } from 'lucide-react';
 
 export const ProgramManagement: React.FC = () => {
   const { currentUser } = useAuth();
-  const { programs, categoryConfigs, settings, addProgram, importProgramsBatch, updateProgram, deleteProgram } = useFestData();
+  const {
+    programs,
+    categoryConfigs,
+    settings,
+    addProgram,
+    importProgramsBatch,
+    updateProgram,
+    deleteProgram,
+    deleteProgramsBatch
+  } = useFestData();
 
   const isArtsEnabled = settings.enableArtsSection !== false;
   const isSportsEnabled = settings.enableSportsSection !== false;
@@ -53,6 +68,11 @@ export const ProgramManagement: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Selection & Bulk Delete State
+  const [selectedProgramIds, setSelectedProgramIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+  const [bulkDeleteTarget, setBulkDeleteTarget] = useState<'SELECTED' | 'FILTERED' | 'ALL' | null>(null);
+
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProgram, setEditingProgram] = useState<Program | null>(null);
@@ -64,7 +84,9 @@ export const ProgramManagement: React.FC = () => {
   const [parsedProgramRows, setParsedProgramRows] = useState<ParsedProgramRow[]>([]);
   const [csvValidCount, setCsvValidCount] = useState(0);
   const [csvErrorCount, setCsvErrorCount] = useState(0);
-  const [csvFilterStatus, setCsvFilterStatus] = useState<'ALL' | 'VALID' | 'ERRORS'>('ALL');
+  const [csvDuplicateCount, setCsvDuplicateCount] = useState(0);
+  const [csvFilterStatus, setCsvFilterStatus] = useState<'ALL' | 'VALID' | 'DUPLICATES' | 'ERRORS'>('ALL');
+  const [skipDuplicates, setSkipDuplicates] = useState(true);
   const [importNotification, setImportNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const [formData, setFormData] = useState({
@@ -102,6 +124,102 @@ export const ProgramManagement: React.FC = () => {
       return matchQ && matchSec && matchSub && matchCat && matchType;
     });
   }, [basePrograms, searchQuery, sectionFilter, subsectionFilter, categoryFilter, typeFilter]);
+
+  // Selection Logic
+  const toggleSelectProgram = (programId: string) => {
+    setSelectedProgramIds(prev => {
+      const next = new Set(prev);
+      if (next.has(programId)) {
+        next.delete(programId);
+      } else {
+        next.add(programId);
+      }
+      return next;
+    });
+  };
+
+  const isAllFilteredSelected = useMemo(() => {
+    if (filteredPrograms.length === 0) return false;
+    return filteredPrograms.every(p => selectedProgramIds.has(p.id));
+  }, [filteredPrograms, selectedProgramIds]);
+
+  const toggleSelectAllFiltered = () => {
+    if (isAllFilteredSelected) {
+      setSelectedProgramIds(prev => {
+        const next = new Set(prev);
+        filteredPrograms.forEach(p => next.delete(p.id));
+        return next;
+      });
+    } else {
+      setSelectedProgramIds(prev => {
+        const next = new Set(prev);
+        filteredPrograms.forEach(p => next.add(p.id));
+        return next;
+      });
+    }
+  };
+
+  const selectAllProgramsInDirectory = () => {
+    setSelectedProgramIds(new Set(programs.map(p => p.id)));
+  };
+
+  const clearSelection = () => {
+    setSelectedProgramIds(new Set());
+  };
+
+  // Bulk Delete Actions
+  const openDeleteSelectedModal = () => {
+    if (selectedProgramIds.size === 0) return;
+    setBulkDeleteTarget('SELECTED');
+    setIsBulkDeleteModalOpen(true);
+  };
+
+  const openDeleteFilteredModal = () => {
+    if (filteredPrograms.length === 0) return;
+    setBulkDeleteTarget('FILTERED');
+    setIsBulkDeleteModalOpen(true);
+  };
+
+  const openDeleteAllDirectoryModal = () => {
+    if (programs.length === 0) return;
+    setBulkDeleteTarget('ALL');
+    setIsBulkDeleteModalOpen(true);
+  };
+
+  const programsPendingDeletion = useMemo(() => {
+    if (bulkDeleteTarget === 'SELECTED') {
+      return programs.filter(p => selectedProgramIds.has(p.id));
+    }
+    if (bulkDeleteTarget === 'FILTERED') {
+      return filteredPrograms;
+    }
+    return programs;
+  }, [bulkDeleteTarget, programs, selectedProgramIds, filteredPrograms]);
+
+  const handleConfirmBulkDelete = () => {
+    const idsToDelete = programsPendingDeletion.map(p => p.id);
+    if (idsToDelete.length === 0) {
+      setIsBulkDeleteModalOpen(false);
+      return;
+    }
+
+    const res = deleteProgramsBatch(idsToDelete, currentUser.name, currentUser.role);
+    if (res.success) {
+      setSelectedProgramIds(prev => {
+        const next = new Set(prev);
+        idsToDelete.forEach(id => next.delete(id));
+        return next;
+      });
+      setIsBulkDeleteModalOpen(false);
+      setImportNotification({
+        type: 'success',
+        message: `Successfully deleted ${res.count} program(s) and all linked registrations from database.`
+      });
+      setTimeout(() => setImportNotification(null), 5000);
+    } else {
+      alert(res.error || 'Failed to delete programs.');
+    }
+  };
 
   const handleOpenAddIndividual = () => {
     setEditingProgram(null);
@@ -146,8 +264,6 @@ export const ProgramManagement: React.FC = () => {
     });
     setIsModalOpen(true);
   };
-
-  const handleOpenAdd = handleOpenAddIndividual;
 
   const handleOpenEdit = (prog: Program) => {
     setEditingProgram(prog);
@@ -201,8 +317,18 @@ export const ProgramManagement: React.FC = () => {
   };
 
   const handleDelete = (id: string, name: string) => {
-    if (confirm(`Are you sure you want to delete program "${name}"? This will delete all registrations and results associated with it.`)) {
+    if (confirm(`Are you sure you want to delete program "${name}"? This will delete all registrations and results associated with it from the database.`)) {
       deleteProgram(id, currentUser.name, currentUser.role);
+      setSelectedProgramIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      setImportNotification({
+        type: 'success',
+        message: `Deleted program "${name}" and removed from database.`
+      });
+      setTimeout(() => setImportNotification(null), 4000);
     }
   };
 
@@ -216,7 +342,9 @@ export const ProgramManagement: React.FC = () => {
     setParsedProgramRows([]);
     setCsvValidCount(0);
     setCsvErrorCount(0);
+    setCsvDuplicateCount(0);
     setCsvFilterStatus('ALL');
+    setSkipDuplicates(true);
     setIsImportModalOpen(true);
   };
 
@@ -233,13 +361,14 @@ export const ProgramManagement: React.FC = () => {
         setParsedProgramRows(result.rows);
         setCsvValidCount(result.validCount);
         setCsvErrorCount(result.errorCount);
+        setCsvDuplicateCount(result.duplicateCount);
       }
     };
     reader.readAsText(file);
   };
 
   const handleCommitCSVImport = () => {
-    const validRows = parsedProgramRows.filter(r => r.isValid);
+    const validRows = parsedProgramRows.filter(r => r.isValid && (!r.isDuplicate || !skipDuplicates));
     if (validRows.length === 0) {
       alert('No valid program rows found to import.');
       return;
@@ -267,7 +396,7 @@ export const ProgramManagement: React.FC = () => {
       setIsImportModalOpen(false);
       setImportNotification({
         type: 'success',
-        message: `Successfully imported ${result.count} competition programs into the registry!`
+        message: `Successfully imported ${result.count} competition programs into the database!`
       });
       setTimeout(() => setImportNotification(null), 5000);
     } else {
@@ -276,8 +405,9 @@ export const ProgramManagement: React.FC = () => {
   };
 
   const visibleParsedRows = useMemo(() => {
-    if (csvFilterStatus === 'VALID') return parsedProgramRows.filter(r => r.isValid);
-    if (csvFilterStatus === 'ERRORS') return parsedProgramRows.filter(r => !r.isValid);
+    if (csvFilterStatus === 'VALID') return parsedProgramRows.filter(r => r.isValid && !r.isDuplicate);
+    if (csvFilterStatus === 'DUPLICATES') return parsedProgramRows.filter(r => r.isDuplicate);
+    if (csvFilterStatus === 'ERRORS') return parsedProgramRows.filter(r => !r.isValid && !r.isDuplicate);
     return parsedProgramRows;
   }, [parsedProgramRows, csvFilterStatus]);
 
@@ -301,6 +431,53 @@ export const ProgramManagement: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          {/* Bulk Selection Actions */}
+          {selectedProgramIds.size > 0 && (
+            <>
+              <button
+                onClick={openDeleteSelectedModal}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-bold shadow-md shadow-rose-600/20 transition-all cursor-pointer animate-in fade-in"
+                title={`Delete ${selectedProgramIds.size} selected program records from database`}
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete Selected ({selectedProgramIds.size})
+              </button>
+
+              <button
+                onClick={clearSelection}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs sm:text-sm font-semibold transition-all cursor-pointer"
+                title="Clear selected programs"
+              >
+                <X className="w-4 h-4 text-slate-500" />
+                Deselect
+              </button>
+            </>
+          )}
+
+          {/* Delete Filtered / Clear All when none selected */}
+          {selectedProgramIds.size === 0 && filteredPrograms.length > 0 && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={openDeleteFilteredModal}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold border border-rose-200 transition-all cursor-pointer"
+                title="Delete all programs currently matching filters from database"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                {filteredPrograms.length === programs.length ? `Clear All (${programs.length})` : `Delete Filtered (${filteredPrograms.length})`}
+              </button>
+
+              {filteredPrograms.length !== programs.length && (
+                <button
+                  onClick={openDeleteAllDirectoryModal}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-rose-50/60 hover:bg-rose-100 text-rose-700 text-xs font-bold border border-rose-200/80 transition-all cursor-pointer"
+                  title="Clear all programs in the entire registry and database"
+                >
+                  Clear All ({programs.length})
+                </button>
+              )}
+            </div>
+          )}
+
           <button
             onClick={handleDownloadSampleCSV}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all cursor-pointer"
@@ -365,6 +542,27 @@ export const ProgramManagement: React.FC = () => {
       {/* Filter Toolbar */}
       <div className="p-4 sm:p-5 rounded-[22px] bg-white border border-slate-200/90 shadow-xs space-y-4">
         <div className="flex flex-col md:flex-row items-center gap-3">
+          <div className="flex items-center gap-2.5 w-full md:w-auto">
+            <button
+              onClick={toggleSelectAllFiltered}
+              className={`p-2 rounded-xl border flex items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
+                isAllFilteredSelected
+                  ? 'bg-rose-500 border-rose-600 text-white'
+                  : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
+              }`}
+              title={isAllFilteredSelected ? 'Deselect all visible' : 'Select all visible programs'}
+            >
+              {isAllFilteredSelected ? (
+                <CheckSquare className="w-4 h-4 text-white" />
+              ) : (
+                <Square className="w-4 h-4 text-slate-400" />
+              )}
+              <span className="hidden sm:inline">
+                {isAllFilteredSelected ? 'Deselect All' : 'Select All Filtered'}
+              </span>
+            </button>
+          </div>
+
           <div className="relative flex-1 w-full">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
@@ -377,6 +575,12 @@ export const ProgramManagement: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-500 shrink-0 font-medium">
+            {selectedProgramIds.size > 0 && (
+              <span className="px-3.5 py-1.5 rounded-full bg-rose-50 border border-rose-200 text-rose-700 font-bold text-xs flex items-center gap-1.5 animate-in fade-in">
+                <CheckSquare className="w-3.5 h-3.5 text-rose-600" />
+                {selectedProgramIds.size} Selected
+              </span>
+            )}
             <span className="px-3.5 py-1.5 rounded-full bg-slate-100 border border-slate-200 font-mono text-slate-800 font-bold text-xs">
               {filteredPrograms.length} of {basePrograms.length} Programs
             </span>
@@ -447,113 +651,241 @@ export const ProgramManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Programs Grid (Compact Small Cards) */}
+      {/* Programs Grid (Cards with Selection Checkbox) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
-        {filteredPrograms.map(prog => (
-          <div
-            key={prog.id}
-            className="p-3.5 sm:p-4 rounded-2xl bg-white border border-slate-200/90 hover:border-rose-200 hover:shadow-md shadow-2xs flex flex-col justify-between transition-all group"
-          >
-            <div>
-              {/* Header Badges: Section, Category & Code */}
-              <div className="flex items-center justify-between gap-1.5 mb-2">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <SectionBadge section={prog.section} />
-                  <CategoryBadge category={prog.category} />
+        {filteredPrograms.map(prog => {
+          const isSelected = selectedProgramIds.has(prog.id);
+          return (
+            <div
+              key={prog.id}
+              className={`p-3.5 sm:p-4 rounded-2xl bg-white border transition-all group flex flex-col justify-between relative ${
+                isSelected
+                  ? 'border-rose-400 bg-rose-50/20 ring-2 ring-rose-400/20 shadow-md'
+                  : 'border-slate-200/90 hover:border-rose-200 hover:shadow-md shadow-2xs'
+              }`}
+            >
+              <div>
+                {/* Header: Checkbox + Badges */}
+                <div className="flex items-center justify-between gap-1.5 mb-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelectProgram(prog.id)}
+                      className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 cursor-pointer accent-rose-600"
+                      title={isSelected ? `Deselect ${prog.name}` : `Select ${prog.name}`}
+                    />
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <SectionBadge section={prog.section} />
+                      <CategoryBadge category={prog.category} />
+                    </div>
+                  </div>
+                  <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200/70 shrink-0">
+                    {prog.code}
+                  </span>
                 </div>
-                <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200/70 shrink-0">
-                  {prog.code}
-                </span>
+
+                {/* Program Name */}
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 uppercase tracking-tight line-clamp-1 group-hover:text-rose-600 transition-colors">
+                  {prog.name}
+                </h3>
+
+                {/* Compact Meta Information */}
+                <div className="mt-2.5 space-y-1.5 text-xs text-slate-500 border-t border-slate-100 pt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 text-[11px]">Format & Type:</span>
+                    <span className="font-semibold text-slate-700 text-[11px]">
+                      {prog.programType} • {prog.subsection.replace('_', ' ')}
+                    </span>
+                  </div>
+
+                  {prog.stageLocation && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 text-[11px]">Venue:</span>
+                      <span className="text-slate-700 flex items-center gap-1 text-[11px] font-medium truncate max-w-[130px]">
+                        <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
+                        <span className="truncate">{prog.stageLocation}</span>
+                      </span>
+                    </div>
+                  )}
+
+                  {prog.scheduleTime && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 text-[11px]">Time:</span>
+                      <span className="text-slate-700 flex items-center gap-1 text-[11px] font-medium truncate max-w-[130px]">
+                        <Clock className="w-3 h-3 text-amber-500 shrink-0" />
+                        <span className="truncate">{prog.scheduleTime}</span>
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 text-[11px]">Participants:</span>
+                    <span className="font-mono text-slate-800 font-bold text-[11px]">
+                      {prog.programType === 'INDIVIDUAL'
+                        ? '1 student'
+                        : prog.programType === 'GROUP'
+                        ? `${prog.requiredMembersPerGroup ?? prog.minParticipants ?? 3} members`
+                        : `${prog.minParticipants}-${prog.maxParticipants} students`}
+                    </span>
+                  </div>
+
+                  {prog.programType === 'GROUP' && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 text-[11px]">Max Groups:</span>
+                      <span className="font-mono text-rose-600 bg-rose-50 px-1.5 py-0.2 rounded font-bold text-[10px]">
+                        {prog.maxGroupsPerTeam ?? 2} groups
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* Program Name */}
-              <h3 className="text-xs sm:text-sm font-bold text-slate-900 uppercase tracking-tight line-clamp-1 group-hover:text-rose-600 transition-colors">
-                {prog.name}
-              </h3>
+              {/* Bottom Footer: Status & Edit/Delete */}
+              <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                    prog.resultStatus === 'PUBLISHED'
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-amber-50 text-amber-700 border border-amber-200'
+                  }`}
+                >
+                  {prog.resultStatus || 'PENDING'}
+                </span>
 
-              {/* Compact Meta Information */}
-              <div className="mt-2.5 space-y-1.5 text-xs text-slate-500 border-t border-slate-100 pt-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400 text-[11px]">Format & Type:</span>
-                  <span className="font-semibold text-slate-700 text-[11px]">
-                    {prog.programType} • {prog.subsection.replace('_', ' ')}
-                  </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => handleOpenEdit(prog)}
+                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
+                    title="Edit Program"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(prog.id, prog.name)}
+                    className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                    title="Delete Program"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-
-                {prog.stageLocation && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400 text-[11px]">Venue:</span>
-                    <span className="text-slate-700 flex items-center gap-1 text-[11px] font-medium truncate max-w-[130px]">
-                      <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
-                      <span className="truncate">{prog.stageLocation}</span>
-                    </span>
-                  </div>
-                )}
-
-                {prog.scheduleTime && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400 text-[11px]">Time:</span>
-                    <span className="text-slate-700 flex items-center gap-1 text-[11px] font-medium truncate max-w-[130px]">
-                      <Clock className="w-3 h-3 text-amber-500 shrink-0" />
-                      <span className="truncate">{prog.scheduleTime}</span>
-                    </span>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400 text-[11px]">Participants:</span>
-                  <span className="font-mono text-slate-800 font-bold text-[11px]">
-                    {prog.programType === 'INDIVIDUAL'
-                      ? '1 student'
-                      : prog.programType === 'GROUP'
-                      ? `${prog.requiredMembersPerGroup ?? prog.minParticipants ?? 3} members`
-                      : `${prog.minParticipants}-${prog.maxParticipants} students`}
-                  </span>
-                </div>
-
-                {prog.programType === 'GROUP' && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400 text-[11px]">Max Groups:</span>
-                    <span className="font-mono text-rose-600 bg-rose-50 px-1.5 py-0.2 rounded font-bold text-[10px]">
-                      {prog.maxGroupsPerTeam ?? 2} groups
-                    </span>
-                  </div>
-                )}
               </div>
             </div>
+          );
+        })}
+      </div>
 
-            {/* Bottom Footer: Status & Edit/Delete */}
-            <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between">
-              <span
-                className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                  prog.resultStatus === 'PUBLISHED'
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    : 'bg-amber-50 text-amber-700 border border-amber-200'
-                }`}
+      {/* Floating Bulk Action Bar */}
+      {selectedProgramIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 text-white backdrop-blur-md px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-800 flex items-center gap-4 animate-in slide-in-from-bottom-5">
+          <div className="flex items-center gap-2 pr-3 border-r border-slate-700">
+            <div className="w-7 h-7 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center font-bold text-xs">
+              {selectedProgramIds.size}
+            </div>
+            <span className="text-xs font-semibold text-slate-200 whitespace-nowrap">
+              {selectedProgramIds.size} selected
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {!isAllFilteredSelected ? (
+              <button
+                onClick={toggleSelectAllFiltered}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition-colors whitespace-nowrap cursor-pointer"
               >
-                {prog.resultStatus || 'PENDING'}
-              </span>
+                Select All Filtered ({filteredPrograms.length})
+              </button>
+            ) : selectedProgramIds.size < programs.length ? (
+              <button
+                onClick={selectAllProgramsInDirectory}
+                className="px-3 py-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900 text-xs font-medium text-rose-200 transition-colors whitespace-nowrap cursor-pointer"
+              >
+                Select All In Registry ({programs.length})
+              </button>
+            ) : (
+              <button
+                onClick={clearSelection}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition-colors whitespace-nowrap cursor-pointer"
+              >
+                Deselect All
+              </button>
+            )}
 
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => handleOpenEdit(prog)}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
-                  title="Edit Program"
-                >
-                  <Edit2 className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => handleDelete(prog.id, prog.name)}
-                  className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                  title="Delete Program"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
+            <button
+              onClick={openDeleteSelectedModal}
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-lg shadow-rose-600/30 transition-all cursor-pointer whitespace-nowrap"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete Selected ({selectedProgramIds.size})
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Bulk Delete Confirmation */}
+      <Modal
+        isOpen={isBulkDeleteModalOpen}
+        onClose={() => setIsBulkDeleteModalOpen(false)}
+        title={
+          bulkDeleteTarget === 'ALL'
+            ? 'Clear All Programs From Database'
+            : bulkDeleteTarget === 'FILTERED'
+            ? `Delete Filtered Programs (${programsPendingDeletion.length})`
+            : `Delete Selected Programs (${programsPendingDeletion.length})`
+        }
+        subtitle="Permanent Database Deletion"
+        maxWidth="lg"
+      >
+        <div className="space-y-4">
+          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs sm:text-sm space-y-2">
+            <div className="flex items-center gap-2 font-bold text-rose-800">
+              <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
+              <span>Warning: This action will delete records directly from Supabase!</span>
+            </div>
+            <p className="text-rose-700 leading-relaxed text-xs">
+              Deleting <strong>{programsPendingDeletion.length} program(s)</strong> will permanently remove them from the database along with all candidate registrations and published results associated with these events.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-700">
+              Programs to be Deleted ({programsPendingDeletion.length}):
+            </label>
+            <div className="max-h-52 overflow-y-auto rounded-2xl border border-slate-200 p-2 space-y-1.5 bg-slate-50 text-xs custom-scrollbar">
+              {programsPendingDeletion.map(p => (
+                <div key={p.id} className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200/80">
+                  <div className="flex items-center gap-2 truncate">
+                    <span className="font-mono font-bold text-rose-600">{p.code}</span>
+                    <span className="font-bold text-slate-800 truncate">{p.name}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <CategoryBadge category={p.category} />
+                    <SectionBadge section={p.section} />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-        ))}
-      </div>
+
+          <div className="flex justify-end gap-2.5 pt-4 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setIsBulkDeleteModalOpen(false)}
+              className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmBulkDelete}
+              className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md shadow-rose-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              Confirm & Delete from Database ({programsPendingDeletion.length})
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* MODAL: Create / Edit Program */}
       <Modal
@@ -784,7 +1116,7 @@ export const ProgramManagement: React.FC = () => {
         </form>
       </Modal>
 
-      {/* MODAL: Program CSV Batch Import */}
+      {/* MODAL: Program CSV Batch Import with Duplicate Warning Alert */}
       <Modal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
@@ -838,11 +1170,37 @@ export const ProgramManagement: React.FC = () => {
             </div>
           </div>
 
+          {/* DUPLICATE WARNING BANNER */}
+          {csvDuplicateCount > 0 && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs sm:text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-1">
+              <div className="flex items-start sm:items-center gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
+                <div>
+                  <p className="font-bold text-amber-900">
+                    ⚠️ Duplicate Event Warning: {csvDuplicateCount} duplicate program(s) detected!
+                  </p>
+                  <p className="text-amber-700 text-xs mt-0.5 leading-relaxed">
+                    Some programs in your uploaded CSV file match existing programs in the system or are repeated. Duplicates are automatically flagged and excluded to prevent database conflicts.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setCsvFilterStatus('DUPLICATES')}
+                  className="px-3 py-1.5 rounded-xl bg-amber-200/90 hover:bg-amber-300 text-amber-900 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  View Duplicates ({csvDuplicateCount})
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Parsed Rows Preview */}
           {parsedProgramRows.length > 0 && (
             <div className="space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-bold text-slate-700">Preview Parsed Records:</span>
                   <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs font-mono font-bold">
                     {parsedProgramRows.length} Total
@@ -850,19 +1208,24 @@ export const ProgramManagement: React.FC = () => {
                   <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-mono font-bold flex items-center gap-1">
                     <CheckCircle className="w-3 h-3 text-emerald-600" /> {csvValidCount} Valid
                   </span>
-                  {csvErrorCount > 0 && (
+                  {csvDuplicateCount > 0 && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-mono font-bold flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3 text-amber-600" /> {csvDuplicateCount} Duplicates
+                    </span>
+                  )}
+                  {csvErrorCount - csvDuplicateCount > 0 && (
                     <span className="px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 text-xs font-mono font-bold flex items-center gap-1">
-                      <XCircle className="w-3 h-3 text-rose-600" /> {csvErrorCount} Errors
+                      <XCircle className="w-3 h-3 text-rose-600" /> {csvErrorCount - csvDuplicateCount} Other Errors
                     </span>
                   )}
                 </div>
 
-                <div className="flex items-center gap-1 text-xs">
+                <div className="flex items-center gap-1 text-xs flex-wrap">
                   <button
                     type="button"
                     onClick={() => setCsvFilterStatus('ALL')}
-                    className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer ${
-                      csvFilterStatus === 'ALL' ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-600'
+                    className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer transition-colors ${
+                      csvFilterStatus === 'ALL' ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >
                     All ({parsedProgramRows.length})
@@ -870,21 +1233,32 @@ export const ProgramManagement: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setCsvFilterStatus('VALID')}
-                    className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer ${
-                      csvFilterStatus === 'VALID' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'
+                    className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer transition-colors ${
+                      csvFilterStatus === 'VALID' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >
                     Valid ({csvValidCount})
                   </button>
-                  {csvErrorCount > 0 && (
+                  {csvDuplicateCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setCsvFilterStatus('DUPLICATES')}
+                      className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer transition-colors ${
+                        csvFilterStatus === 'DUPLICATES' ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                      }`}
+                    >
+                      Duplicates ({csvDuplicateCount})
+                    </button>
+                  )}
+                  {csvErrorCount - csvDuplicateCount > 0 && (
                     <button
                       type="button"
                       onClick={() => setCsvFilterStatus('ERRORS')}
-                      className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer ${
-                        csvFilterStatus === 'ERRORS' ? 'bg-rose-600 text-white' : 'bg-slate-100 text-slate-600'
+                      className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer transition-colors ${
+                        csvFilterStatus === 'ERRORS' ? 'bg-rose-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                       }`}
                     >
-                      Errors ({csvErrorCount})
+                      Errors ({csvErrorCount - csvDuplicateCount})
                     </button>
                   )}
                 </div>
@@ -908,7 +1282,13 @@ export const ProgramManagement: React.FC = () => {
                     {visibleParsedRows.map(row => (
                       <tr
                         key={row.rowIndex}
-                        className={row.isValid ? 'hover:bg-slate-50' : 'bg-rose-50/50 hover:bg-rose-50'}
+                        className={
+                          row.isDuplicate
+                            ? 'bg-amber-50/70 hover:bg-amber-50'
+                            : row.isValid
+                            ? 'hover:bg-slate-50'
+                            : 'bg-rose-50/50 hover:bg-rose-50'
+                        }
                       >
                         <td className="py-2 px-3 font-mono font-bold text-slate-500">#{row.rowIndex}</td>
                         <td className="py-2 px-3 font-mono font-bold text-rose-600">{row.code}</td>
@@ -928,7 +1308,14 @@ export const ProgramManagement: React.FC = () => {
                           {row.stageLocation} • {row.scheduleTime}
                         </td>
                         <td className="py-2 px-3 text-right">
-                          {row.isValid ? (
+                          {row.isDuplicate ? (
+                            <span
+                              className="inline-flex items-center gap-1 text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full font-bold text-[11px]"
+                              title={row.duplicateDetails || row.errors[0]}
+                            >
+                              <AlertTriangle className="w-3 h-3 text-amber-600" /> Duplicate
+                            </span>
+                          ) : row.isValid ? (
                             <span className="inline-flex items-center gap-1 text-emerald-700 font-bold">
                               <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> Valid
                             </span>
@@ -952,7 +1339,7 @@ export const ProgramManagement: React.FC = () => {
           {/* Footer Actions */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-100">
             <span className="text-xs text-slate-500">
-              Only valid event records ({csvValidCount}) will be inserted into the system.
+              Only valid, non-duplicate event records ({csvValidCount}) will be inserted into the database.
             </span>
 
             <div className="flex items-center gap-2.5">
@@ -979,3 +1366,4 @@ export const ProgramManagement: React.FC = () => {
     </div>
   );
 };
+

@@ -883,6 +883,9 @@ export async function saveProgramsBatchDb(programs: Program[]) {
 
 export async function deleteProgramDb(programId: string) {
   try {
+    // Delete any dependent results and registrations first to prevent FK constraint failures
+    await supabase.from('results').delete().eq('program_id', programId);
+    await supabase.from('registrations').delete().eq('program_id', programId);
     const { error } = await supabase.from('programs').delete().eq('id', programId);
     if (error) throw error;
     return { success: true };
@@ -895,6 +898,9 @@ export async function deleteProgramDb(programId: string) {
 export async function deleteProgramsBatchDb(programIds: string[]) {
   try {
     if (programIds.length === 0) return { success: true };
+    // Delete any dependent results and registrations first to prevent FK constraint failures
+    await supabase.from('results').delete().in('program_id', programIds);
+    await supabase.from('registrations').delete().in('program_id', programIds);
     const { error } = await supabase.from('programs').delete().in('id', programIds);
     if (error) throw error;
     return { success: true };

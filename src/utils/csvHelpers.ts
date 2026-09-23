@@ -425,6 +425,9 @@ export interface ParsedProgramRow {
   scheduleTime?: string;
   rules?: string;
   isValid: boolean;
+  isDuplicate?: boolean;
+  duplicateType?: 'EXISTING_CODE' | 'EXISTING_NAME_CAT' | 'CSV_DUPLICATE_CODE' | 'CSV_DUPLICATE_NAME_CAT';
+  duplicateDetails?: string;
   errors: string[];
   warnings: string[];
 }
@@ -433,10 +436,16 @@ export function validateProgramCSVRows(
   csvText: string,
   existingPrograms: Program[],
   categoryConfigs?: CategoryConfig[]
-): { rows: ParsedProgramRow[]; validCount: number; errorCount: number } {
+): {
+  rows: ParsedProgramRow[];
+  validCount: number;
+  errorCount: number;
+  duplicateCount: number;
+  duplicates: ParsedProgramRow[];
+} {
   const parsedGrid = parseCSV(csvText);
   if (parsedGrid.length < 2) {
-    return { rows: [], validCount: 0, errorCount: 0 };
+    return { rows: [], validCount: 0, errorCount: 0, duplicateCount: 0, duplicates: [] };
   }
 
   const rawHeaders = parsedGrid[0].map(h => h.trim().toLowerCase().replace(/[\s_-]/g, ''));
@@ -453,8 +462,20 @@ export function validateProgramCSVRows(
   const rulesIdx = rawHeaders.findIndex(h => h === 'rules' || h === 'description');
 
   const rows: ParsedProgramRow[] = [];
-  const seenCodes = new Set<string>(existingPrograms.map(p => p.code.toLowerCase().trim()));
-  const csvSeenCodes = new Set<string>();
+  
+  // Existing database lookup maps
+  const existingByCode = new Map<string, Program>();
+  const existingByNameCat = new Map<string, Program>();
+  
+  existingPrograms.forEach(p => {
+    if (p.code) existingByCode.set(p.code.toLowerCase().trim(), p);
+    const key = `${p.name.toLowerCase().trim()}___${p.category.toLowerCase().trim()}___${p.section.toLowerCase().trim()}`;
+    existingByNameCat.set(key, p);
+  });
+
+  // Intra-CSV tracker
+  const csvSeenCodes = new Map<string, number>();
+  const csvSeenNameCats = new Map<string, number>();
 
   for (let i = 1; i < parsedGrid.length; i++) {
     const rawRow = parsedGrid[i];
@@ -474,25 +495,16 @@ export function validateProgramCSVRows(
 
     const errors: string[] = [];
     const warnings: string[] = [];
+    let isDuplicate = false;
+    let duplicateType: 'EXISTING_CODE' | 'EXISTING_NAME_CAT' | 'CSV_DUPLICATE_CODE' | 'CSV_DUPLICATE_NAME_CAT' | undefined;
+    let duplicateDetails: string | undefined;
 
     // 1. Name validation
     if (!name.trim()) {
       errors.push('Event name is required');
     }
 
-    // 2. Code validation & auto-generation
-    if (!code.trim()) {
-      code = `EVT-${Date.now().toString().slice(-4)}${i}`;
-      warnings.push(`Auto-generated event code "${code}"`);
-    } else if (seenCodes.has(code.toLowerCase().trim())) {
-      errors.push(`Event code "${code}" already exists`);
-    } else if (csvSeenCodes.has(code.toLowerCase().trim())) {
-      errors.push(`Duplicate event code "${code}" in CSV`);
-    } else {
-      csvSeenCodes.add(code.toLowerCase().trim());
-    }
-
-    // 3. Section validation
+    // 2. Section validation
     let section: FestSection = 'ARTS';
     if (sectionRaw === 'SPORTS' || sectionRaw.startsWith('SPORT')) {
       section = 'SPORTS';
@@ -502,7 +514,7 @@ export function validateProgramCSVRows(
       errors.push(`Invalid Section "${sectionRaw}". Must be ARTS or SPORTS`);
     }
 
-    // 4. Subsection validation
+    // 3. Subsection validation
     let subsection: ProgramSubsection = 'STAGE';
     if (section === 'SPORTS') {
       subsection = 'SPORTS_EVENT';
@@ -514,7 +526,7 @@ export function validateProgramCSVRows(
       }
     }
 
-    // 5. Category validation
+    // 4. Category validation
     let category: FestCategory = 'SENIOR';
     const parsedCat = parseCategoryString(categoryRaw, categoryConfigs);
     if (parsedCat) {
@@ -533,7 +545,60 @@ export function validateProgramCSVRows(
       errors.push(`Invalid Category "${categoryRaw}".`);
     }
 
-    // 6. Program Type validation
+    // 5. Code validation & Duplicate Checks
+    const cleanCode = code.trim();
+    const cleanCodeKey = cleanCode.toLowerCase();
+
+    if (!cleanCode) {
+      code = `EVT-${Date.now().toString().slice(-4)}${i}`;
+      warnings.push(`Auto-generated event code "${code}"`);
+    } else {
+      // Check duplicate code against existing database
+      if (existingByCode.has(cleanCodeKey)) {
+        const existingProg = existingByCode.get(cleanCodeKey)!;
+        isDuplicate = true;
+        duplicateType = 'EXISTING_CODE';
+        duplicateDetails = `Code "${cleanCode}" already exists in system for "${existingProg.name}" (${existingProg.category})`;
+        errors.push(`Duplicate Code: "${cleanCode}" already exists in system`);
+      } 
+      // Check duplicate code within CSV
+      else if (csvSeenCodes.has(cleanCodeKey)) {
+        const prevRow = csvSeenCodes.get(cleanCodeKey)!;
+        isDuplicate = true;
+        duplicateType = 'CSV_DUPLICATE_CODE';
+        duplicateDetails = `Duplicate code "${cleanCode}" repeats in CSV (First in Row #${prevRow})`;
+        errors.push(`Duplicate Code: "${cleanCode}" repeats in CSV (Row #${prevRow})`);
+      } else {
+        csvSeenCodes.set(cleanCodeKey, i + 1);
+      }
+    }
+
+    // 6. Name + Category + Section Duplicate Check
+    const cleanName = name.trim();
+    if (cleanName) {
+      const nameCatKey = `${cleanName.toLowerCase()}___${category.toLowerCase()}___${section.toLowerCase()}`;
+      
+      // Check against existing database
+      if (!isDuplicate && existingByNameCat.has(nameCatKey)) {
+        const existingProg = existingByNameCat.get(nameCatKey)!;
+        isDuplicate = true;
+        duplicateType = 'EXISTING_NAME_CAT';
+        duplicateDetails = `Event "${cleanName}" (${category}) already exists in system with code "${existingProg.code}"`;
+        errors.push(`Duplicate Event: "${cleanName}" (${category}) already registered in system`);
+      }
+      // Check against earlier row in CSV
+      else if (!isDuplicate && csvSeenNameCats.has(nameCatKey)) {
+        const prevRow = csvSeenNameCats.get(nameCatKey)!;
+        isDuplicate = true;
+        duplicateType = 'CSV_DUPLICATE_NAME_CAT';
+        duplicateDetails = `Duplicate event "${cleanName}" (${category}) repeats in CSV (First in Row #${prevRow})`;
+        errors.push(`Duplicate Event: "${cleanName}" (${category}) repeats in CSV (Row #${prevRow})`);
+      } else {
+        csvSeenNameCats.set(nameCatKey, i + 1);
+      }
+    }
+
+    // 7. Program Type validation
     let programType: ProgramType = 'INDIVIDUAL';
     if (progTypeRaw === 'GROUP' || progTypeRaw.includes('GRP')) {
       programType = 'GROUP';
@@ -543,7 +608,7 @@ export function validateProgramCSVRows(
       programType = 'INDIVIDUAL';
     }
 
-    // 7. Participant limits validation
+    // 8. Participant limits validation
     let minParticipants = 1;
     let maxParticipants = 1;
     if (minRaw && !isNaN(parseInt(minRaw, 10))) {
@@ -559,7 +624,7 @@ export function validateProgramCSVRows(
 
     rows.push({
       rowIndex: i + 1,
-      code: code.trim(),
+      code: code.trim().toUpperCase(),
       name: name.trim(),
       section,
       subsection,
@@ -571,6 +636,9 @@ export function validateProgramCSVRows(
       scheduleTime: scheduleTime?.trim() || 'Day 1',
       rules: rules?.trim() || '',
       isValid,
+      isDuplicate,
+      duplicateType,
+      duplicateDetails,
       errors,
       warnings
     });
@@ -578,8 +646,10 @@ export function validateProgramCSVRows(
 
   const validCount = rows.filter(r => r.isValid).length;
   const errorCount = rows.length - validCount;
+  const duplicates = rows.filter(r => r.isDuplicate);
+  const duplicateCount = duplicates.length;
 
-  return { rows, validCount, errorCount };
+  return { rows, validCount, errorCount, duplicateCount, duplicates };
 }
 
 /* ==========================================================================
