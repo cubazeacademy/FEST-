@@ -43,6 +43,13 @@ export function mapCategoryConfigToDb(c: CategoryConfig) {
     section_scope: c.sectionScope || 'ALL',
     assigned_classes: c.assignedClasses || [],
     max_individual_programs_per_student: c.maxIndividualProgramsPerStudent || 4,
+    min_individual_programs_per_student: c.minIndividualProgramsPerStudent ?? 0,
+    min_stage_programs: c.minStagePrograms ?? 0,
+    max_stage_programs: c.maxStagePrograms !== undefined ? c.maxStagePrograms : (c.maxIndividualProgramsPerStudent || 4),
+    min_non_stage_programs: c.minNonStagePrograms ?? 0,
+    max_non_stage_programs: c.maxNonStagePrograms !== undefined ? c.maxNonStagePrograms : (c.maxIndividualProgramsPerStudent || 4),
+    min_sports_programs: c.minSportsPrograms ?? 0,
+    max_sports_programs: c.maxSportsPrograms !== undefined ? c.maxSportsPrograms : (c.maxIndividualProgramsPerStudent || 4),
     chest_no_start: c.chestNoStart,
     chest_no_end: c.chestNoEnd,
     status: c.status || 'ACTIVE'
@@ -56,7 +63,14 @@ export function mapCategoryConfigFromDb(row: any): CategoryConfig {
     displayName: row.display_name,
     sectionScope: row.section_scope,
     assignedClasses: row.assigned_classes || [],
-    maxIndividualProgramsPerStudent: row.max_individual_programs_per_student,
+    maxIndividualProgramsPerStudent: row.max_individual_programs_per_student ?? 5,
+    minIndividualProgramsPerStudent: row.min_individual_programs_per_student ?? 0,
+    minStagePrograms: row.min_stage_programs ?? 0,
+    maxStagePrograms: row.max_stage_programs !== undefined ? row.max_stage_programs : (row.max_individual_programs_per_student ?? 5),
+    minNonStagePrograms: row.min_non_stage_programs ?? 0,
+    maxNonStagePrograms: row.max_non_stage_programs !== undefined ? row.max_non_stage_programs : (row.max_individual_programs_per_student ?? 5),
+    minSportsPrograms: row.min_sports_programs ?? 0,
+    maxSportsPrograms: row.max_sports_programs !== undefined ? row.max_sports_programs : (row.max_individual_programs_per_student ?? 5),
     chestNoStart: row.chest_no_start,
     chestNoEnd: row.chest_no_end,
     status: row.status
@@ -992,8 +1006,24 @@ export async function saveSettingsDb(settings: FestSettings) {
 
 export async function saveCategoryConfigDb(config: CategoryConfig) {
   try {
-    const { error } = await supabase.from('category_configs').upsert(mapCategoryConfigToDb(config));
-    if (error) throw error;
+    const fullPayload = mapCategoryConfigToDb(config);
+    const { error } = await supabase.from('category_configs').upsert(fullPayload);
+    if (error) {
+      console.warn('Upsert with full category rules returned error, attempting fallback schema:', error.message);
+      const fallbackPayload = {
+        id: config.id,
+        category: config.category,
+        display_name: config.displayName,
+        section_scope: config.sectionScope || 'ALL',
+        assigned_classes: config.assignedClasses || [],
+        max_individual_programs_per_student: config.maxIndividualProgramsPerStudent || 4,
+        chest_no_start: config.chestNoStart,
+        chest_no_end: config.chestNoEnd,
+        status: config.status || 'ACTIVE'
+      };
+      const { error: fbErr } = await supabase.from('category_configs').upsert(fallbackPayload);
+      if (fbErr) throw fbErr;
+    }
     return { success: true };
   } catch (err: any) {
     console.error('Failed to save category config:', err);

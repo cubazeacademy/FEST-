@@ -1029,6 +1029,38 @@ export function validateIndividualRegCSVRows(
             csvStudentCounts.set(matchedStudent.id, batchCount + 1);
           }
 
+          // Specific subsection quota check
+          const isSports = matchedProgram.section === 'SPORTS' || matchedProgram.subsection === 'SPORTS_EVENT';
+          const isStage = !isSports && matchedProgram.subsection === 'STAGE';
+          const isNonStage = !isSports && matchedProgram.subsection === 'NON_STAGE';
+
+          if (isStage && currentCatConfig?.maxStagePrograms !== undefined) {
+            const existingStage = existingRegistrations.filter(
+              r => r.studentId === matchedStudent.id && r.programType === 'INDIVIDUAL' && r.status === 'CONFIRMED' && r.section !== 'SPORTS' && r.subsection === 'STAGE'
+            ).length;
+            if (existingStage >= currentCatConfig.maxStagePrograms) {
+              slotErrors.push(`Stage quota exceeded: Max ${currentCatConfig.maxStagePrograms} Stage events allowed for ${matchedStudent.category}.`);
+            }
+          }
+
+          if (isNonStage && currentCatConfig?.maxNonStagePrograms !== undefined) {
+            const existingNonStage = existingRegistrations.filter(
+              r => r.studentId === matchedStudent.id && r.programType === 'INDIVIDUAL' && r.status === 'CONFIRMED' && r.section !== 'SPORTS' && r.subsection === 'NON_STAGE'
+            ).length;
+            if (existingNonStage >= currentCatConfig.maxNonStagePrograms) {
+              slotErrors.push(`Non-Stage quota exceeded: Max ${currentCatConfig.maxNonStagePrograms} Non-Stage events allowed for ${matchedStudent.category}.`);
+            }
+          }
+
+          if (isSports && currentCatConfig?.maxSportsPrograms !== undefined) {
+            const existingSports = existingRegistrations.filter(
+              r => r.studentId === matchedStudent.id && r.programType === 'INDIVIDUAL' && r.status === 'CONFIRMED' && (r.section === 'SPORTS' || r.subsection === 'SPORTS_EVENT')
+            ).length;
+            if (existingSports >= currentCatConfig.maxSportsPrograms) {
+              slotErrors.push(`Sports quota exceeded: Max ${currentCatConfig.maxSportsPrograms} Sports events allowed for ${matchedStudent.category}.`);
+            }
+          }
+
           // Program house limit check (allotted candidate limit)
           const teamHouseLimit = matchedProgram.maxParticipants || maxCandidates || 2;
           const existingTeamCount = existingRegistrations.filter(

@@ -69,7 +69,17 @@ export interface CategoryConfig {
   displayName: string;
   sectionScope: 'ALL' | 'ARTS' | 'SPORTS';
   assignedClasses: string[];
-  maxIndividualProgramsPerStudent: number;
+  maxIndividualProgramsPerStudent: number; // Overall Max limit
+  minIndividualProgramsPerStudent?: number; // Overall Min limit
+  
+  // Specific program type limits
+  minStagePrograms?: number; // Arts Stage Min (default 0)
+  maxStagePrograms?: number; // Arts Stage Max
+  minNonStagePrograms?: number; // Arts Non-Stage Min (default 0)
+  maxNonStagePrograms?: number; // Arts Non-Stage Max
+  minSportsPrograms?: number; // Sports Min (default 0)
+  maxSportsPrograms?: number; // Sports Max
+  
   chestNoStart: number;
   chestNoEnd: number;
   status: 'ACTIVE' | 'INACTIVE';

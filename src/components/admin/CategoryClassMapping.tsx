@@ -58,7 +58,14 @@ export const CategoryClassMapping: React.FC = () => {
     sectionScope: 'ALL' as 'ALL' | 'ARTS' | 'SPORTS',
     chestNoStart: 101,
     chestNoEnd: 199,
-    maxIndividualProgramsPerStudent: 5
+    maxIndividualProgramsPerStudent: 5,
+    minIndividualProgramsPerStudent: 1,
+    minStagePrograms: 0,
+    maxStagePrograms: 2,
+    minNonStagePrograms: 0,
+    maxNonStagePrograms: 3,
+    minSportsPrograms: 0,
+    maxSportsPrograms: 2
   });
   const [createSelectedClasses, setCreateSelectedClasses] = useState<string[]>([]);
   const [createCustomClassInput, setCreateCustomClassInput] = useState('');
@@ -175,7 +182,14 @@ export const CategoryClassMapping: React.FC = () => {
       sectionScope: 'ALL',
       chestNoStart: startRange,
       chestNoEnd: endRange,
-      maxIndividualProgramsPerStudent: 5
+      maxIndividualProgramsPerStudent: 5,
+      minIndividualProgramsPerStudent: 1,
+      minStagePrograms: 0,
+      maxStagePrograms: 2,
+      minNonStagePrograms: 0,
+      maxNonStagePrograms: 3,
+      minSportsPrograms: 0,
+      maxSportsPrograms: 2
     });
     setCreateSelectedClasses([]);
     setCreateCustomClassInput('');
@@ -226,6 +240,13 @@ export const CategoryClassMapping: React.FC = () => {
         sectionScope: createCategoryForm.sectionScope,
         assignedClasses: createSelectedClasses,
         maxIndividualProgramsPerStudent: Number(createCategoryForm.maxIndividualProgramsPerStudent) || 5,
+        minIndividualProgramsPerStudent: Number(createCategoryForm.minIndividualProgramsPerStudent) || 0,
+        minStagePrograms: Number(createCategoryForm.minStagePrograms) || 0,
+        maxStagePrograms: Number(createCategoryForm.maxStagePrograms) || 2,
+        minNonStagePrograms: Number(createCategoryForm.minNonStagePrograms) || 0,
+        maxNonStagePrograms: Number(createCategoryForm.maxNonStagePrograms) || 3,
+        minSportsPrograms: Number(createCategoryForm.minSportsPrograms) || 0,
+        maxSportsPrograms: Number(createCategoryForm.maxSportsPrograms) || 2,
         chestNoStart: Number(createCategoryForm.chestNoStart),
         chestNoEnd: Number(createCategoryForm.chestNoEnd),
         status: 'ACTIVE'
@@ -315,22 +336,41 @@ export const CategoryClassMapping: React.FC = () => {
                     </div>
                   </div>
                   <h4 className="text-base font-bold text-slate-900 mt-1">{cat.displayName}</h4>
-                  <div className="mt-3.5 space-y-2 text-sm text-slate-600">
+                  
+                  <div className="mt-3.5 space-y-2.5 text-xs text-slate-600">
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-500">Chest Range:</span>
+                      <span className="text-slate-500 font-medium">Chest Range:</span>
                       <span className="font-mono text-slate-900 font-bold bg-slate-100 px-2 py-0.5 rounded-md text-xs">
                         #{cat.chestNoStart} - #{cat.chestNoEnd}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-500">Max Events:</span>
-                      <span className="font-mono text-slate-900 font-bold">{cat.maxIndividualProgramsPerStudent}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-500">Classes:</span>
-                      <span className="text-indigo-700 font-bold truncate max-w-[130px] text-xs" title={cat.assignedClasses.map(c => `Cls ${c}`).join(', ')}>
+                      <span className="text-slate-500 font-medium">Classes:</span>
+                      <span className="text-indigo-700 font-bold truncate max-w-[140px] text-xs" title={cat.assignedClasses.map(c => `Cls ${c}`).join(', ')}>
                         {cat.assignedClasses.length > 0 ? cat.assignedClasses.map(c => `Cls ${c}`).join(', ') : 'None'}
                       </span>
+                    </div>
+
+                    {/* Participation Rules Grid (Stage, Non-Stage, Sports) */}
+                    <div className="pt-2 border-t border-slate-100">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 mb-1.5 uppercase tracking-wider">
+                        <span>Rules (Min - Max)</span>
+                        <span className="text-indigo-600 text-[10px] font-mono">Individual</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5 font-mono text-[11px]">
+                        <div className="bg-purple-50/80 p-2 rounded-xl border border-purple-200/70 text-center" title="Stage Programs Cap">
+                          <span className="text-purple-700 font-sans font-bold text-[10px] block">Stage</span>
+                          <span className="font-bold text-purple-950 text-xs">{cat.minStagePrograms ?? 0} - {cat.maxStagePrograms ?? 2}</span>
+                        </div>
+                        <div className="bg-blue-50/80 p-2 rounded-xl border border-blue-200/70 text-center" title="Non-Stage Programs Cap">
+                          <span className="text-blue-700 font-sans font-bold text-[10px] block">Non-Stg</span>
+                          <span className="font-bold text-blue-950 text-xs">{cat.minNonStagePrograms ?? 0} - {cat.maxNonStagePrograms ?? 3}</span>
+                        </div>
+                        <div className="bg-emerald-50/80 p-2 rounded-xl border border-emerald-200/70 text-center" title="Sports Programs Cap">
+                          <span className="text-emerald-700 font-sans font-bold text-[10px] block">Sports</span>
+                          <span className="font-bold text-emerald-950 text-xs">{cat.minSportsPrograms ?? 0} - {cat.maxSportsPrograms ?? 2}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -567,17 +607,129 @@ export const CategoryClassMapping: React.FC = () => {
               </div>
             </div>
 
-            <div>
-              <label className="text-xs font-bold text-slate-700">Max Individual Programs Per Student *</label>
-              <input
-                type="number"
-                required
-                min={1}
-                max={20}
-                value={editingConfig.maxIndividualProgramsPerStudent}
-                onChange={e => setEditingConfig({ ...editingConfig, maxIndividualProgramsPerStudent: parseInt(e.target.value, 10) || 1 })}
-                className="mt-1 w-full px-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-sm text-slate-900 font-mono focus:outline-none focus:border-indigo-500 focus:bg-white"
-              />
+            {/* Participation Rules Section (Stage, Non-Stage, Sports) */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-50 to-indigo-50/40 border border-slate-200/90 space-y-3.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sliders className="w-3.5 h-3.5 text-indigo-600" />
+                    Individual Program Participation Rules
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Set minimum & maximum program quotas per candidate for Stage, Non-Stage, and Sports.
+                  </p>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
+                  Individual
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* 1. Stage Programs */}
+                <div className="p-3 bg-purple-50/60 rounded-xl border border-purple-200/70 shadow-xs">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-bold text-purple-900 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                      Stage Programs
+                    </span>
+                    <span className="text-[9px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.2 rounded">Arts Stage</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-purple-700 block">Min Stage</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={20}
+                        value={editingConfig.minStagePrograms ?? 0}
+                        onChange={e => setEditingConfig({ ...editingConfig, minStagePrograms: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                        className="mt-0.5 w-full px-2 py-1.5 rounded-lg bg-white border border-purple-200 text-xs font-mono font-bold text-purple-950 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-purple-700 block">Max Stage *</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={20}
+                        value={editingConfig.maxStagePrograms !== undefined ? editingConfig.maxStagePrograms : 2}
+                        onChange={e => setEditingConfig({ ...editingConfig, maxStagePrograms: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                        className="mt-0.5 w-full px-2 py-1.5 rounded-lg bg-white border border-purple-200 text-xs font-mono font-bold text-purple-950 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Non-Stage Programs */}
+                <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200/70 shadow-xs">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                      Non-Stage
+                    </span>
+                    <span className="text-[9px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded">Off-Stage</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-blue-700 block">Min Non-Stg</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={20}
+                        value={editingConfig.minNonStagePrograms ?? 0}
+                        onChange={e => setEditingConfig({ ...editingConfig, minNonStagePrograms: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                        className="mt-0.5 w-full px-2 py-1.5 rounded-lg bg-white border border-blue-200 text-xs font-mono font-bold text-blue-950 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-blue-700 block">Max Non-Stg *</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={20}
+                        value={editingConfig.maxNonStagePrograms !== undefined ? editingConfig.maxNonStagePrograms : 3}
+                        onChange={e => setEditingConfig({ ...editingConfig, maxNonStagePrograms: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                        className="mt-0.5 w-full px-2 py-1.5 rounded-lg bg-white border border-blue-200 text-xs font-mono font-bold text-blue-950 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Sports Programs */}
+                <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200/70 shadow-xs">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                      Sports
+                    </span>
+                    <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded">Athletics</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-emerald-700 block">Min Sports</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={20}
+                        value={editingConfig.minSportsPrograms ?? 0}
+                        onChange={e => setEditingConfig({ ...editingConfig, minSportsPrograms: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                        className="mt-0.5 w-full px-2 py-1.5 rounded-lg bg-white border border-emerald-200 text-xs font-mono font-bold text-emerald-950 focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-emerald-700 block">Max Sports *</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={20}
+                        value={editingConfig.maxSportsPrograms !== undefined ? editingConfig.maxSportsPrograms : 2}
+                        onChange={e => setEditingConfig({ ...editingConfig, maxSportsPrograms: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                        className="mt-0.5 w-full px-2 py-1.5 rounded-lg bg-white border border-emerald-200 text-xs font-mono font-bold text-emerald-950 focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Select Classes for Category Section */}
@@ -748,17 +900,129 @@ export const CategoryClassMapping: React.FC = () => {
             </div>
           </div>
 
-          <div>
-            <label className="text-xs font-bold text-slate-700">Max Individual Programs Per Student *</label>
-            <input
-              type="number"
-              required
-              min={1}
-              max={20}
-              value={createCategoryForm.maxIndividualProgramsPerStudent}
-              onChange={e => setCreateCategoryForm({ ...createCategoryForm, maxIndividualProgramsPerStudent: parseInt(e.target.value, 10) || 1 })}
-              className="mt-1 w-full px-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-sm text-slate-900 font-mono focus:outline-none focus:border-indigo-500 focus:bg-white"
-            />
+          {/* Participation Rules Section (Stage, Non-Stage, Sports) */}
+          <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-50 to-indigo-50/40 border border-slate-200/90 space-y-3.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-indigo-600" />
+                  Individual Program Participation Rules
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Set minimum & maximum program quotas per candidate for Stage, Non-Stage, and Sports.
+                </p>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
+                Individual
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* 1. Stage Programs */}
+              <div className="p-3 bg-purple-50/60 rounded-xl border border-purple-200/70 shadow-xs">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-bold text-purple-900 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                    Stage Programs
+                  </span>
+                  <span className="text-[9px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.2 rounded">Arts Stage</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-purple-700 block">Min Stage</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      value={createCategoryForm.minStagePrograms ?? 0}
+                      onChange={e => setCreateCategoryForm({ ...createCategoryForm, minStagePrograms: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                      className="mt-0.5 w-full px-2 py-1.5 rounded-lg bg-white border border-purple-200 text-xs font-mono font-bold text-purple-950 focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-purple-700 block">Max Stage *</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      value={createCategoryForm.maxStagePrograms !== undefined ? createCategoryForm.maxStagePrograms : 2}
+                      onChange={e => setCreateCategoryForm({ ...createCategoryForm, maxStagePrograms: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                      className="mt-0.5 w-full px-2 py-1.5 rounded-lg bg-white border border-purple-200 text-xs font-mono font-bold text-purple-950 focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Non-Stage Programs */}
+              <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200/70 shadow-xs">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                    Non-Stage
+                  </span>
+                  <span className="text-[9px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded">Off-Stage</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-blue-700 block">Min Non-Stg</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      value={createCategoryForm.minNonStagePrograms ?? 0}
+                      onChange={e => setCreateCategoryForm({ ...createCategoryForm, minNonStagePrograms: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                      className="mt-0.5 w-full px-2 py-1.5 rounded-lg bg-white border border-blue-200 text-xs font-mono font-bold text-blue-950 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-blue-700 block">Max Non-Stg *</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      value={createCategoryForm.maxNonStagePrograms !== undefined ? createCategoryForm.maxNonStagePrograms : 3}
+                      onChange={e => setCreateCategoryForm({ ...createCategoryForm, maxNonStagePrograms: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                      className="mt-0.5 w-full px-2 py-1.5 rounded-lg bg-white border border-blue-200 text-xs font-mono font-bold text-blue-950 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Sports Programs */}
+              <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200/70 shadow-xs">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    Sports
+                  </span>
+                  <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded">Athletics</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-emerald-700 block">Min Sports</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      value={createCategoryForm.minSportsPrograms ?? 0}
+                      onChange={e => setCreateCategoryForm({ ...createCategoryForm, minSportsPrograms: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                      className="mt-0.5 w-full px-2 py-1.5 rounded-lg bg-white border border-emerald-200 text-xs font-mono font-bold text-emerald-950 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-emerald-700 block">Max Sports *</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      value={createCategoryForm.maxSportsPrograms !== undefined ? createCategoryForm.maxSportsPrograms : 2}
+                      onChange={e => setCreateCategoryForm({ ...createCategoryForm, maxSportsPrograms: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                      className="mt-0.5 w-full px-2 py-1.5 rounded-lg bg-white border border-emerald-200 text-xs font-mono font-bold text-emerald-950 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Select Classes for New Category */}

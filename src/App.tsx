@@ -16,6 +16,7 @@ import { ResultApproval } from './components/admin/ResultApproval';
 import { PointsConfig } from './components/admin/PointsConfig';
 import { UserManagement } from './components/admin/UserManagement';
 import { SettingsAuditLogs } from './components/admin/SettingsAuditLogs';
+import { CategoryRulesManagement } from './components/admin/CategoryRulesManagement';
 
 // Team Leader Components
 import { TeamLeaderDashboard } from './components/teamLeader/TeamLeaderDashboard';
@@ -131,6 +132,8 @@ export function App() {
         return <ControllerAssignment />;
       case 'admin_registrations':
         return <RegistrationMaster />;
+      case 'admin_rules':
+        return <CategoryRulesManagement />;
       case 'admin_results':
         return <ResultApproval />;
       case 'admin_points_config':

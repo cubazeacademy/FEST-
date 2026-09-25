@@ -366,6 +366,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         onClick={() => handleNavClick('admin_registrations')}
                       />
                     )}
+                    {matchesSearch('Participation Rules') && (
+                      <NavItem
+                        icon={<Sliders className="w-[18px] h-[18px]" />}
+                        label="Participation Rules"
+                        active={activeTab === 'admin_rules'}
+                        onClick={() => handleNavClick('admin_rules')}
+                      />
+                    )}
                     {matchesSearch('Result & Tie Approval') && (
                       <NavItem
                         icon={<Trophy className="w-[18px] h-[18px]" />}
@@ -540,6 +548,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         label="Categories & Class Map"
                         active={activeTab === 'admin_categories_classes'}
                         onClick={() => handleNavClick('admin_categories_classes')}
+                      />
+                    )}
+
+                    {matchesSearch('Participation Rules') && (
+                      <NavItem
+                        icon={<Sliders className="w-[18px] h-[18px]" />}
+                        label="Participation Rules"
+                        active={activeTab === 'admin_rules'}
+                        onClick={() => handleNavClick('admin_rules')}
                       />
                     )}
 

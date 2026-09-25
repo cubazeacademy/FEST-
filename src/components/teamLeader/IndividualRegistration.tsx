@@ -9,7 +9,7 @@ import {
   triggerFileDownload,
   ParsedIndividualRegRow
 } from '../../utils/csvHelpers';
-import { isCategoryMatch } from '../../utils/validations';
+import { isCategoryMatch, getStudentParticipationBreakdown } from '../../utils/validations';
 import {
   UserPlus,
   CheckCircle2,
@@ -293,6 +293,26 @@ export const IndividualRegistration: React.FC = () => {
     currentCategoryConfig?.maxIndividualProgramsPerStudent ??
     settings.maxIndividualProgramsDefault ??
     5;
+
+  const isCurrentSports = !!activeProgram && (activeProgram.section === 'SPORTS' || activeProgram.subsection === 'SPORTS_EVENT');
+  const isCurrentStage = !!activeProgram && !isCurrentSports && activeProgram.subsection === 'STAGE';
+  const isCurrentNonStage = !!activeProgram && !isCurrentSports && activeProgram.subsection === 'NON_STAGE';
+
+  const activeProgramTypeLimit = useMemo(() => {
+    if (!currentCategoryConfig) return maxIndividualLimit;
+    if (isCurrentStage && currentCategoryConfig.maxStagePrograms !== undefined) {
+      return currentCategoryConfig.maxStagePrograms;
+    }
+    if (isCurrentNonStage && currentCategoryConfig.maxNonStagePrograms !== undefined) {
+      return currentCategoryConfig.maxNonStagePrograms;
+    }
+    if (isCurrentSports && currentCategoryConfig.maxSportsPrograms !== undefined) {
+      return currentCategoryConfig.maxSportsPrograms;
+    }
+    return maxIndividualLimit;
+  }, [currentCategoryConfig, isCurrentStage, isCurrentNonStage, isCurrentSports, maxIndividualLimit]);
+
+  const activeProgramTypeLabel = isCurrentStage ? 'Stage' : isCurrentNonStage ? 'Non-Stage' : isCurrentSports ? 'Sports' : 'Items';
 
   // Students belonging to this Leader's House for the selected category (with phonetic/alias category match)
   const eligibleTeamStudents = useMemo(() => {
@@ -855,13 +875,20 @@ export const IndividualRegistration: React.FC = () => {
                 </div>
 
                 {/* Quota Overview Card on Right */}
-                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-right self-start sm:self-auto shrink-0">
-                  <div className="text-[11px] font-bold text-slate-500 uppercase">Category Limit</div>
-                  <div className="text-sm font-black text-slate-900 font-mono">
-                    Max {maxIndividualLimit} Events / Student
+                <div className="p-3.5 rounded-2xl bg-gradient-to-br from-slate-50 to-indigo-50/40 border border-slate-200/90 text-right self-start sm:self-auto shrink-0 shadow-xs">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-end gap-1.5">
+                    <span>{selectedCategory} Limits</span>
+                    <span className="bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded font-bold">{activeProgramTypeLabel}</span>
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">
-                    {activeProgramRegistrations.length} Candidates Registered from House
+                  <div className="text-xs font-black text-slate-900 font-mono mt-1">
+                    Total Max: <span className="text-indigo-600">{maxIndividualLimit}</span> • {activeProgramTypeLabel} Max: <span className="text-purple-600">{activeProgramTypeLimit}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-1 flex items-center justify-end gap-1.5 font-mono">
+                    <span>Stg: {currentCategoryConfig?.maxStagePrograms ?? maxIndividualLimit}</span>
+                    <span>|</span>
+                    <span>Non-Stg: {currentCategoryConfig?.maxNonStagePrograms ?? maxIndividualLimit}</span>
+                    <span>|</span>
+                    <span>Sports: {currentCategoryConfig?.maxSportsPrograms ?? maxIndividualLimit}</span>
                   </div>
                 </div>
               </div>
@@ -986,7 +1013,7 @@ export const IndividualRegistration: React.FC = () => {
                         <th className="py-3 px-4">Candidate</th>
                         <th className="py-3 px-4">Chest No</th>
                         <th className="py-3 px-4">Class</th>
-                        <th className="py-3 px-4">Participation Quota</th>
+                        <th className="py-3 px-4">Participation Breakdown</th>
                         <th className="py-3 px-4 text-right">Registration Action</th>
                       </tr>
                     </thead>
@@ -1005,9 +1032,27 @@ export const IndividualRegistration: React.FC = () => {
                             r => r.studentId === student.id
                           );
                           const isRegistered = !!regEntry;
-                          const currentCount = getStudentIndividualCount(student.id);
-                          const isQuotaReached = currentCount >= maxIndividualLimit;
+                          const breakdown = getStudentParticipationBreakdown(student.id, registrations);
+                          const currentTotal = breakdown.totalIndividual;
+                          const currentTypeCount = isCurrentStage
+                            ? breakdown.stageCount
+                            : isCurrentNonStage
+                            ? breakdown.nonStageCount
+                            : isCurrentSports
+                            ? breakdown.sportsCount
+                            : currentTotal;
+
+                          const isTotalQuotaReached = currentTotal >= maxIndividualLimit;
+                          const isTypeQuotaReached = currentTypeCount >= activeProgramTypeLimit;
+                          const isQuotaReached = isTotalQuotaReached || isTypeQuotaReached;
                           const isCatMatching = isCategoryMatch(student.category, activeProgram.category, categoryConfigs);
+
+                          let limitBadge = null;
+                          if (isTotalQuotaReached) {
+                            limitBadge = 'TOTAL MAX';
+                          } else if (isTypeQuotaReached) {
+                            limitBadge = `${activeProgramTypeLabel.toUpperCase()} MAX`;
+                          }
 
                           return (
                             <tr
@@ -1064,18 +1109,18 @@ export const IndividualRegistration: React.FC = () => {
 
                               {/* Quota Progress */}
                               <td className="py-3.5 px-4">
-                                <div className="w-28">
-                                  <div className="flex items-center justify-between text-[11px] font-bold mb-1">
+                                <div className="w-36 space-y-1">
+                                  <div className="flex items-center justify-between text-[11px] font-bold">
                                     <span
                                       className={`font-mono ${
                                         isQuotaReached ? 'text-amber-700' : 'text-slate-700'
                                       }`}
                                     >
-                                      {currentCount} / {maxIndividualLimit}
+                                      {activeProgramTypeLabel}: {currentTypeCount}/{activeProgramTypeLimit}
                                     </span>
-                                    {isQuotaReached && (
+                                    {limitBadge && (
                                       <span className="text-[9px] font-black bg-amber-100 text-amber-800 px-1 rounded border border-amber-300">
-                                        MAX
+                                        {limitBadge}
                                       </span>
                                     )}
                                   </div>
@@ -1086,10 +1131,13 @@ export const IndividualRegistration: React.FC = () => {
                                         backgroundColor: isQuotaReached ? '#f59e0b' : teamColor,
                                         width: `${Math.min(
                                           100,
-                                          (currentCount / maxIndividualLimit) * 100
+                                          (currentTypeCount / Math.max(1, activeProgramTypeLimit)) * 100
                                         )}%`
                                       }}
                                     />
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 font-mono">
+                                    Total: {currentTotal}/{maxIndividualLimit} (Stg:{breakdown.stageCount}, Non:{breakdown.nonStageCount}, Sp:{breakdown.sportsCount})
                                   </div>
                                 </div>
                               </td>
@@ -1119,6 +1167,13 @@ export const IndividualRegistration: React.FC = () => {
                                     disabled={isQuotaReached || !settings.registrationOpen}
                                     style={{ backgroundColor: teamColor, boxShadow: `0 3px 10px 0 ${teamColor}35` }}
                                     className="px-3.5 py-1.5 rounded-xl hover:opacity-90 disabled:opacity-40 disabled:hover:opacity-40 text-white font-bold text-xs transition-all flex items-center gap-1.5 ml-auto cursor-pointer"
+                                    title={
+                                      isTotalQuotaReached
+                                        ? 'Candidate has reached the overall maximum limit'
+                                        : isTypeQuotaReached
+                                        ? `Candidate has reached the maximum ${activeProgramTypeLabel} program limit`
+                                        : undefined
+                                    }
                                   >
                                     <UserPlus className="w-3.5 h-3.5" />
                                     Register

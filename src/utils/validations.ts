@@ -108,8 +108,50 @@ export function isCategoryMatch(
   return false;
 }
 
+export interface StudentParticipationBreakdown {
+  totalIndividual: number;
+  stageCount: number;
+  nonStageCount: number;
+  sportsCount: number;
+}
+
 /**
- * Validates individual student registration against category, duplicate entries, and participation limits
+ * Calculates current confirmed individual participation count broken down by type
+ */
+export function getStudentParticipationBreakdown(
+  studentId: string,
+  registrations: Registration[]
+): StudentParticipationBreakdown {
+  const studentRegs = registrations.filter(
+    r => r.studentId === studentId && r.programType === 'INDIVIDUAL' && r.status === 'CONFIRMED'
+  );
+
+  let stageCount = 0;
+  let nonStageCount = 0;
+  let sportsCount = 0;
+
+  studentRegs.forEach(r => {
+    if (r.section === 'SPORTS' || r.subsection === 'SPORTS_EVENT') {
+      sportsCount++;
+    } else if (r.subsection === 'STAGE') {
+      stageCount++;
+    } else if (r.subsection === 'NON_STAGE') {
+      nonStageCount++;
+    } else {
+      stageCount++;
+    }
+  });
+
+  return {
+    totalIndividual: studentRegs.length,
+    stageCount,
+    nonStageCount,
+    sportsCount
+  };
+}
+
+/**
+ * Validates individual student registration against category, duplicate entries, and participation limits (overall, stage, non-stage, sports)
  */
 export function validateIndividualRegistration(
   student: Student,
@@ -147,26 +189,91 @@ export function validateIndividualRegistration(
     };
   }
 
-  // 3. Participation limit check
+  // 3. Participation limit checks
   const catConfig = categoryConfigs.find(c => isCategoryMatch(c.category, student.category, categoryConfigs));
-  const maxAllowed = catConfig?.maxIndividualProgramsPerStudent ?? defaultLimit;
+  const maxTotalAllowed = catConfig?.maxIndividualProgramsPerStudent ?? defaultLimit;
 
-  // ONLY count Individual Programs - Group Programs do NOT count toward this limit
-  const currentStudentRegistrationsCount = registrations.filter(
-    r =>
-      r.studentId === student.id &&
-      r.programType === 'INDIVIDUAL' &&
-      r.status === 'CONFIRMED'
-  ).length;
+  const breakdown = getStudentParticipationBreakdown(student.id, registrations);
 
-  if (currentStudentRegistrationsCount >= maxAllowed) {
+  // 3.1 Overall Total Limit Check
+  if (breakdown.totalIndividual >= maxTotalAllowed) {
     return {
       valid: false,
-      error: `This student has reached the maximum individual program limit (${maxAllowed} programs) for this category.`
+      error: `Candidate "${student.name}" has reached the maximum overall limit (${maxTotalAllowed} programs) for category "${catConfig?.displayName || student.category}".`
     };
   }
 
+  // 3.2 Specific Program Type Maximum Check
+  const isSports = program.section === 'SPORTS' || program.subsection === 'SPORTS_EVENT';
+  const isStage = !isSports && program.subsection === 'STAGE';
+  const isNonStage = !isSports && program.subsection === 'NON_STAGE';
+
+  if (isStage && catConfig?.maxStagePrograms !== undefined) {
+    if (breakdown.stageCount >= catConfig.maxStagePrograms) {
+      return {
+        valid: false,
+        error: `Candidate "${student.name}" has reached the maximum Stage program limit (${catConfig.maxStagePrograms} max) for category "${catConfig.displayName}".`
+      };
+    }
+  }
+
+  if (isNonStage && catConfig?.maxNonStagePrograms !== undefined) {
+    if (breakdown.nonStageCount >= catConfig.maxNonStagePrograms) {
+      return {
+        valid: false,
+        error: `Candidate "${student.name}" has reached the maximum Non-Stage program limit (${catConfig.maxNonStagePrograms} max) for category "${catConfig.displayName}".`
+      };
+    }
+  }
+
+  if (isSports && catConfig?.maxSportsPrograms !== undefined) {
+    if (breakdown.sportsCount >= catConfig.maxSportsPrograms) {
+      return {
+        valid: false,
+        error: `Candidate "${student.name}" has reached the maximum Sports program limit (${catConfig.maxSportsPrograms} max) for category "${catConfig.displayName}".`
+      };
+    }
+  }
+
   return { valid: true };
+}
+
+export interface CandidateMinComplianceResult {
+  isCompliant: boolean;
+  warnings: string[];
+}
+
+/**
+ * Checks if candidate satisfies configured minimum participation thresholds
+ */
+export function checkCandidateMinCompliance(
+  student: Student,
+  registrations: Registration[],
+  categoryConfigs: CategoryConfig[]
+): CandidateMinComplianceResult {
+  const catConfig = categoryConfigs.find(c => isCategoryMatch(c.category, student.category, categoryConfigs));
+  if (!catConfig) return { isCompliant: true, warnings: [] };
+
+  const breakdown = getStudentParticipationBreakdown(student.id, registrations);
+  const warnings: string[] = [];
+
+  if (catConfig.minIndividualProgramsPerStudent && breakdown.totalIndividual < catConfig.minIndividualProgramsPerStudent) {
+    warnings.push(`Min total: ${breakdown.totalIndividual}/${catConfig.minIndividualProgramsPerStudent}`);
+  }
+  if (catConfig.minStagePrograms && breakdown.stageCount < catConfig.minStagePrograms) {
+    warnings.push(`Min Stage: ${breakdown.stageCount}/${catConfig.minStagePrograms}`);
+  }
+  if (catConfig.minNonStagePrograms && breakdown.nonStageCount < catConfig.minNonStagePrograms) {
+    warnings.push(`Min Non-Stage: ${breakdown.nonStageCount}/${catConfig.minNonStagePrograms}`);
+  }
+  if (catConfig.minSportsPrograms && breakdown.sportsCount < catConfig.minSportsPrograms) {
+    warnings.push(`Min Sports: ${breakdown.sportsCount}/${catConfig.minSportsPrograms}`);
+  }
+
+  return {
+    isCompliant: warnings.length === 0,
+    warnings
+  };
 }
 
 /**
