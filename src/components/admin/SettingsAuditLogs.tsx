@@ -26,6 +26,10 @@ export const SettingsAuditLogs: React.FC = () => {
     importDatabaseJSON
   } = useFestData();
 
+  const [isDirty, setIsDirty] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState<{ success: boolean; msg: string } | null>(null);
+
   const [settingsForm, setSettingsForm] = useState({
     festName: settings.festName,
     festTagline: settings.festTagline,
@@ -40,13 +44,48 @@ export const SettingsAuditLogs: React.FC = () => {
     enableSportsSection: settings.enableSportsSection !== false
   });
 
+  // Keep form in sync with settings unless the user has uncommitted edits
+  React.useEffect(() => {
+    if (!isDirty) {
+      setSettingsForm({
+        festName: settings.festName,
+        festTagline: settings.festTagline,
+        festYear: settings.festYear,
+        institutionName: settings.institutionName,
+        registrationOpen: settings.registrationOpen,
+        registrationOpensAt: settings.registrationOpensAt,
+        registrationClosesAt: settings.registrationClosesAt,
+        allowCombinedLeaderboard: settings.allowCombinedLeaderboard,
+        showPublicLiveScores: settings.showPublicLiveScores,
+        enableArtsSection: settings.enableArtsSection !== false,
+        enableSportsSection: settings.enableSportsSection !== false
+      });
+    }
+  }, [settings, isDirty]);
+
+  const updateFormField = (fields: Partial<typeof settingsForm>) => {
+    setIsDirty(true);
+    setSettingsForm(prev => ({ ...prev, ...fields }));
+  };
+
   const [importJsonText, setImportJsonText] = useState('');
   const [importStatus, setImportStatus] = useState<{ success?: boolean; msg?: string } | null>(null);
   const [logSearchQuery, setLogSearchQuery] = useState('');
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateSettings(settingsForm, currentUser.name, currentUser.role);
+    setIsSaving(true);
+    setSaveFeedback(null);
+    try {
+      updateSettings(settingsForm, currentUser.name, currentUser.role);
+      setIsDirty(false);
+      setSaveFeedback({ success: true, msg: 'Global fest settings saved successfully!' });
+      setTimeout(() => setSaveFeedback(null), 3500);
+    } catch (err: any) {
+      setSaveFeedback({ success: false, msg: err?.message || 'Failed to save settings.' });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDownloadBackup = () => {
@@ -116,7 +155,7 @@ export const SettingsAuditLogs: React.FC = () => {
                 type="text"
                 required
                 value={settingsForm.festName}
-                onChange={e => setSettingsForm({ ...settingsForm, festName: e.target.value })}
+                onChange={e => updateFormField({ festName: e.target.value })}
                 className="mt-1 w-full px-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 shadow-xs focus:bg-white transition-colors"
               />
             </div>
@@ -127,7 +166,7 @@ export const SettingsAuditLogs: React.FC = () => {
                 type="text"
                 required
                 value={settingsForm.festYear}
-                onChange={e => setSettingsForm({ ...settingsForm, festYear: e.target.value })}
+                onChange={e => updateFormField({ festYear: e.target.value })}
                 className="mt-1 w-full px-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 font-mono shadow-xs focus:bg-white transition-colors"
               />
             </div>
@@ -140,7 +179,7 @@ export const SettingsAuditLogs: React.FC = () => {
                 type="text"
                 required
                 value={settingsForm.institutionName}
-                onChange={e => setSettingsForm({ ...settingsForm, institutionName: e.target.value })}
+                onChange={e => updateFormField({ institutionName: e.target.value })}
                 className="mt-1 w-full px-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 shadow-xs focus:bg-white transition-colors"
               />
             </div>
@@ -150,7 +189,7 @@ export const SettingsAuditLogs: React.FC = () => {
               <input
                 type="text"
                 value={settingsForm.festTagline}
-                onChange={e => setSettingsForm({ ...settingsForm, festTagline: e.target.value })}
+                onChange={e => updateFormField({ festTagline: e.target.value })}
                 className="mt-1 w-full px-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 shadow-xs focus:bg-white transition-colors"
               />
             </div>
@@ -167,7 +206,7 @@ export const SettingsAuditLogs: React.FC = () => {
                 <input
                   type="checkbox"
                   checked={settingsForm.registrationOpen}
-                  onChange={e => setSettingsForm({ ...settingsForm, registrationOpen: e.target.checked })}
+                  onChange={e => updateFormField({ registrationOpen: e.target.checked })}
                   className="sr-only peer"
                 />
                 <div className="w-12 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600" />
@@ -180,7 +219,7 @@ export const SettingsAuditLogs: React.FC = () => {
                 <input
                   type="datetime-local"
                   value={settingsForm.registrationOpensAt}
-                  onChange={e => setSettingsForm({ ...settingsForm, registrationOpensAt: e.target.value })}
+                  onChange={e => updateFormField({ registrationOpensAt: e.target.value })}
                   className="mt-1.5 w-full px-4 py-2 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 shadow-xs font-medium"
                 />
               </div>
@@ -190,7 +229,7 @@ export const SettingsAuditLogs: React.FC = () => {
                 <input
                   type="datetime-local"
                   value={settingsForm.registrationClosesAt}
-                  onChange={e => setSettingsForm({ ...settingsForm, registrationClosesAt: e.target.value })}
+                  onChange={e => updateFormField({ registrationClosesAt: e.target.value })}
                   className="mt-1.5 w-full px-4 py-2 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 shadow-xs font-medium"
                 />
               </div>
@@ -220,7 +259,7 @@ export const SettingsAuditLogs: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={settingsForm.enableArtsSection}
-                    onChange={e => setSettingsForm({ ...settingsForm, enableArtsSection: e.target.checked })}
+                    onChange={e => updateFormField({ enableArtsSection: e.target.checked })}
                     className="sr-only peer"
                   />
                   <div className="w-12 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-fuchsia-600" />
@@ -242,7 +281,7 @@ export const SettingsAuditLogs: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={settingsForm.enableSportsSection}
-                    onChange={e => setSettingsForm({ ...settingsForm, enableSportsSection: e.target.checked })}
+                    onChange={e => updateFormField({ enableSportsSection: e.target.checked })}
                     className="sr-only peer"
                   />
                   <div className="w-12 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-600" />
@@ -251,12 +290,21 @@ export const SettingsAuditLogs: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex justify-end pt-2">
+          <div className="flex items-center justify-between pt-2">
+            {saveFeedback ? (
+              <div className={`flex items-center gap-2 text-xs font-bold ${saveFeedback.success ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-red-700 bg-red-50 border-red-200'} px-3.5 py-1.5 rounded-xl border`}>
+                {saveFeedback.success ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-red-600" />}
+                {saveFeedback.msg}
+              </div>
+            ) : (
+              <div />
+            )}
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow-md shadow-indigo-500/20 transition-all cursor-pointer"
+              disabled={isSaving}
+              className="px-6 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-bold shadow-md shadow-indigo-500/20 transition-all cursor-pointer flex items-center gap-2"
             >
-              Save Global Settings
+              {isSaving ? 'Saving...' : 'Save Global Settings'}
             </button>
           </div>
         </form>

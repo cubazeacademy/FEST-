@@ -443,20 +443,27 @@ export async function fetchFullRelationalData() {
 
     // Merge categoryConfigs from relational table with any snapshot rules in fest_state
     const snapshotCategories: CategoryConfig[] = festStateRes.data?.data?.categoryConfigs || [];
-    const mappedCategories = (categoriesRes.data ? categoriesRes.data.map(mapCategoryConfigFromDb) : []).map(cat => {
-      const snap = snapshotCategories.find(s => s.id === cat.id || s.category === cat.category);
-      return {
-        ...cat,
-        minStagePrograms: cat.minStagePrograms !== undefined ? cat.minStagePrograms : (snap?.minStagePrograms ?? 0),
-        maxStagePrograms: cat.maxStagePrograms !== undefined ? cat.maxStagePrograms : (snap?.maxStagePrograms ?? 2),
-        minNonStagePrograms: cat.minNonStagePrograms !== undefined ? cat.minNonStagePrograms : (snap?.minNonStagePrograms ?? 0),
-        maxNonStagePrograms: cat.maxNonStagePrograms !== undefined ? cat.maxNonStagePrograms : (snap?.maxNonStagePrograms ?? 3),
-        minSportsPrograms: cat.minSportsPrograms !== undefined ? cat.minSportsPrograms : (snap?.minSportsPrograms ?? 0),
-        maxSportsPrograms: cat.maxSportsPrograms !== undefined ? cat.maxSportsPrograms : (snap?.maxSportsPrograms ?? 2),
-        minIndividualProgramsPerStudent: cat.minIndividualProgramsPerStudent !== undefined ? cat.minIndividualProgramsPerStudent : (snap?.minIndividualProgramsPerStudent ?? 0),
-        maxIndividualProgramsPerStudent: snap?.maxIndividualProgramsPerStudent || cat.maxIndividualProgramsPerStudent || 5
-      };
-    });
+    const mappedCategories: CategoryConfig[] = (categoriesRes.data && categoriesRes.data.length > 0)
+      ? categoriesRes.data.map(mapCategoryConfigFromDb).map(cat => {
+          const snap = snapshotCategories.find(s => s.id === cat.id || s.category === cat.category);
+          return {
+            ...cat,
+            displayName: cat.displayName || snap?.displayName || cat.category,
+            assignedClasses: (cat.assignedClasses && cat.assignedClasses.length > 0) ? cat.assignedClasses : (snap?.assignedClasses || []),
+            minStagePrograms: snap?.minStagePrograms !== undefined ? Number(snap.minStagePrograms) : (cat.minStagePrograms !== undefined ? Number(cat.minStagePrograms) : 0),
+            maxStagePrograms: snap?.maxStagePrograms !== undefined ? Number(snap.maxStagePrograms) : (cat.maxStagePrograms !== undefined ? Number(cat.maxStagePrograms) : 2),
+            minNonStagePrograms: snap?.minNonStagePrograms !== undefined ? Number(snap.minNonStagePrograms) : (cat.minNonStagePrograms !== undefined ? Number(cat.minNonStagePrograms) : 0),
+            maxNonStagePrograms: snap?.maxNonStagePrograms !== undefined ? Number(snap.maxNonStagePrograms) : (cat.maxNonStagePrograms !== undefined ? Number(cat.maxNonStagePrograms) : 3),
+            minSportsPrograms: snap?.minSportsPrograms !== undefined ? Number(snap.minSportsPrograms) : (cat.minSportsPrograms !== undefined ? Number(cat.minSportsPrograms) : 0),
+            maxSportsPrograms: snap?.maxSportsPrograms !== undefined ? Number(snap.maxSportsPrograms) : (cat.maxSportsPrograms !== undefined ? Number(cat.maxSportsPrograms) : 2),
+            minIndividualProgramsPerStudent: snap?.minIndividualProgramsPerStudent !== undefined ? Number(snap.minIndividualProgramsPerStudent) : (cat.minIndividualProgramsPerStudent !== undefined ? Number(cat.minIndividualProgramsPerStudent) : 0),
+            maxIndividualProgramsPerStudent: snap?.maxIndividualProgramsPerStudent !== undefined ? Number(snap.maxIndividualProgramsPerStudent) : (cat.maxIndividualProgramsPerStudent !== undefined ? Number(cat.maxIndividualProgramsPerStudent) : 5),
+            chestNoStart: cat.chestNoStart ?? snap?.chestNoStart ?? 101,
+            chestNoEnd: cat.chestNoEnd ?? snap?.chestNoEnd ?? 199,
+            status: cat.status || snap?.status || 'ACTIVE'
+          };
+        })
+      : snapshotCategories;
 
     return {
       settings: settingsRes.data ? mapSettingsFromDb(settingsRes.data) : undefined,

@@ -171,6 +171,8 @@ const FestDataContext = createContext<FestDataContextType | undefined>(undefined
 
 const STORAGE_PREFIX = 'fest_app_state_v2_';
 
+const CLIENT_INSTANCE_ID = 'tab_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
+
 export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Safe LocalStorage loader
   const loadState = <T,>(key: string, defaultVal: T): T => {
@@ -218,12 +220,14 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     localStorage.setItem(STORAGE_PREFIX + 'auditLogs', JSON.stringify(auditLogs));
   }, [settings, teams, students, categoryConfigs, classMappings, programs, registrations, results, scoringConfigs, gradeConfigs, positionConfigs, auditLogs]);
 
-  // Debounced auto-mirror to fest_state snapshot document so realtime and snapshot are always 100% updated
+  // Debounced auto-mirror to fest_state snapshot document with client ID tracking
   useEffect(() => {
     if (!isInitialLoadDoneRef.current || isRemoteUpdatingRef.current) return;
 
     const timer = setTimeout(() => {
       saveCloudFestState({
+        _clientId: CLIENT_INSTANCE_ID,
+        _timestamp: Date.now(),
         settings,
         teams,
         students,
@@ -273,7 +277,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           setLastSyncedAt(new Date().toLocaleTimeString());
           setTimeout(() => {
             isRemoteUpdatingRef.current = false;
-          }, 200);
+          }, 300);
         } else {
           // Seed initial state to relational tables
           const payload = {
@@ -315,15 +319,35 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         (payload) => {
           const updated = payload.new as { id?: string; data?: any; updated_at?: string };
           if (updated && updated.data && !isRemoteUpdatingRef.current) {
-            isRemoteUpdatingRef.current = true;
             const d = updated.data;
+            // Ignore echoes originating from this specific client/tab
+            if (d._clientId === CLIENT_INSTANCE_ID) {
+              return;
+            }
+
+            isRemoteUpdatingRef.current = true;
             if (d.settings) setSettings(d.settings);
             if (d.teams) setTeams(d.teams);
             if (d.students) setStudents(d.students);
             if (d.categoryConfigs) setCategoryConfigs(d.categoryConfigs);
             if (d.classMappings) setClassMappings(d.classMappings);
             if (d.programs) setPrograms(d.programs);
-            if (d.registrations) setRegistrations(d.registrations);
+            
+            // Safe merge registrations to avoid overwriting recent local additions
+            if (Array.isArray(d.registrations)) {
+              setRegistrations(prev => {
+                const remoteMap = new Map((d.registrations as Registration[]).map(r => [r.id, r]));
+                // Keep local records that may be in-flight
+                const merged = [...d.registrations];
+                for (const localReg of prev) {
+                  if (!remoteMap.has(localReg.id)) {
+                    merged.push(localReg);
+                  }
+                }
+                return merged;
+              });
+            }
+
             if (d.results) setResults(d.results);
             if (d.scoringConfigs) {
               setScoringConfigs(d.scoringConfigs);

@@ -330,21 +330,28 @@ export const GroupRegistration: React.FC = () => {
   const [editStudentSearchQuery, setEditStudentSearchQuery] = useState('');
   const [editFeedback, setEditFeedback] = useState<string | null>(null);
 
-  // Keep slots array synced with required candidate count
+  // Keep slots array synced with active program selection without resetting candidate selections on re-renders
+  const prevActiveProgramIdRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (activeProgram) {
       const count = activeProgram.requiredMembersPerGroup ?? activeProgram.minParticipants ?? 3;
+      const isProgramChanged = prevActiveProgramIdRef.current !== activeProgram.id;
+      prevActiveProgramIdRef.current = activeProgram.id;
+
       setCandidateSlots(prev => {
-        if (prev.length === count) return prev;
+        if (!isProgramChanged && prev.length === count) return prev;
         const newArr = new Array(count).fill('');
         for (let i = 0; i < Math.min(prev.length, count); i++) {
-          newArr[i] = prev[i];
+          newArr[i] = isProgramChanged ? '' : prev[i];
         }
         return newArr;
       });
-      setGroupNameInput(`${myTeam?.name || 'Team'} - Group ${registeredTeamGroups.length + 1}`);
+
+      if (isProgramChanged) {
+        setGroupNameInput(`${myTeam?.name || 'Team'} - Group ${registeredTeamGroups.length + 1}`);
+      }
     }
-  }, [activeProgram?.id, registeredTeamGroups.length, myTeam?.name]);
+  }, [activeProgram?.id, activeProgram?.requiredMembersPerGroup, activeProgram?.minParticipants, myTeam?.name]);
 
   // Eligible students for the active program (strictly from this leader's house matching active program category)
   const eligibleTeamStudents = useMemo(() => {
