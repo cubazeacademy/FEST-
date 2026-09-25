@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { SectionBadge, CategoryBadge } from '../common/Badge';
 import { Modal } from '../common/Modal';
 import { Registration } from '../../types';
+import { exportRegistrationsToSpreadsheet } from '../../utils/csvHelpers';
 import {
   FileCheck2,
   Search,
@@ -119,48 +120,8 @@ export const RegistrationMaster: React.FC = () => {
     );
   };
 
-  const handleExportCSV = () => {
-    const headers = [
-      'Registration ID',
-      'Section',
-      'Category',
-      'Program',
-      'Type',
-      'House',
-      'Chest No',
-      'Participant/Group',
-      'Adm No',
-      'Members Count',
-      'Group Members Details',
-      'Timestamp'
-    ];
-    const rows = filteredRegistrations.map(r => [
-      r.id,
-      r.section,
-      r.category,
-      `"${r.programName}"`,
-      r.programType,
-      `"${r.teamName}"`,
-      r.chestNumber || '-',
-      `"${r.studentName || r.groupName}"`,
-      r.admissionNo || '-',
-      r.groupMembers ? r.groupMembers.length : 1,
-      r.groupMembers
-        ? `"${r.groupMembers.map(m => `${m.name} (${m.admissionNo}${m.chestNumber ? ` #${m.chestNumber}` : ''})`).join('; ')}"`
-        : '-',
-      r.timestamp
-    ]);
-
-    const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `fest_registrations_master_${Date.now()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleExportSpreadsheet = (format: 'csv' | 'xlsx' = 'xlsx') => {
+    exportRegistrationsToSpreadsheet(filteredRegistrations, format, `fest_registrations_master_${Date.now()}`);
   };
 
   const handleWithdraw = (regId: string, name: string) => {
@@ -292,13 +253,24 @@ export const RegistrationMaster: React.FC = () => {
             </>
           )}
 
-          <button
-            onClick={handleExportCSV}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold shadow-xs transition-all cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5 text-slate-500" />
-            Export CSV Registry
-          </button>
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border border-slate-200">
+            <button
+              onClick={() => handleExportSpreadsheet('xlsx')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-emerald-50 text-emerald-700 text-xs font-bold shadow-2xs border border-emerald-200/60 transition-all cursor-pointer"
+              title="Export all filtered registrations to Excel (.xlsx)"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-600" />
+              Export Excel (XLSX)
+            </button>
+            <button
+              onClick={() => handleExportSpreadsheet('csv')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-2xs border border-slate-200 transition-all cursor-pointer"
+              title="Export all filtered registrations to CSV"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-500" />
+              Export CSV
+            </button>
+          </div>
         </div>
       </div>
 

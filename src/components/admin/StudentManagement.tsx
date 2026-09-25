@@ -7,6 +7,10 @@ import {
   generateSampleStudentCSV,
   validateStudentCSVRows,
   triggerFileDownload,
+  triggerExcelDownload,
+  readSpreadsheetFileAsText,
+  downloadStudentTemplate,
+  exportStudentsToSpreadsheet,
   ParsedStudentRow
 } from '../../utils/csvHelpers';
 import { CategoryBadge } from '../common/Badge';
@@ -408,8 +412,15 @@ export const StudentManagement: React.FC = () => {
   };
 
   const handleDownloadSampleCSV = () => {
-    const csvContent = generateSampleStudentCSV(categoryConfigs, teams);
-    triggerFileDownload(csvContent, 'candidate_upload_template.csv');
+    downloadStudentTemplate('csv', categoryConfigs, teams);
+  };
+
+  const handleDownloadSampleExcel = () => {
+    downloadStudentTemplate('xlsx', categoryConfigs, teams);
+  };
+
+  const handleExportRoster = (format: 'csv' | 'xlsx' = 'xlsx') => {
+    exportStudentsToSpreadsheet(filteredStudents, teams, format, `candidates_roster_${Date.now()}`);
   };
 
   const handleOpenImportModal = () => {
@@ -421,22 +432,22 @@ export const StudentManagement: React.FC = () => {
     setIsImportModalOpen(true);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setCsvFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = event => {
-      const text = event.target?.result as string;
+    try {
+      const text = await readSpreadsheetFileAsText(file);
       if (text) {
         const result = validateStudentCSVRows(text, students, teams, classMappings, categoryConfigs);
         setParsedStudentRows(result.rows);
         setCsvValidCount(result.validCount);
         setCsvErrorCount(result.errorCount);
       }
-    };
-    reader.readAsText(file);
+    } catch (err: any) {
+      alert('Failed to read spreadsheet file: ' + (err?.message || 'Unknown error'));
+    }
   };
 
   const handleCommitCSVImport = () => {
@@ -547,21 +558,31 @@ export const StudentManagement: React.FC = () => {
             </button>
           )}
 
-          <button
-            onClick={handleDownloadSampleCSV}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-700 text-sm font-bold border border-slate-200 shadow-xs transition-all cursor-pointer"
-            title="Download CSV sample format template for candidate batch upload"
-          >
-            <Download className="w-4 h-4 text-slate-500" />
-            Sample CSV
-          </button>
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border border-slate-200">
+            <button
+              onClick={() => handleExportRoster('xlsx')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-emerald-700 text-xs font-bold shadow-2xs border border-emerald-200/60 transition-all cursor-pointer"
+              title="Export filtered candidates to Excel (.xlsx)"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-600" />
+              Export Excel
+            </button>
+            <button
+              onClick={() => handleExportRoster('csv')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-2xs border border-slate-200 transition-all cursor-pointer"
+              title="Export filtered candidates to CSV"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-500" />
+              Export CSV
+            </button>
+          </div>
 
           <button
             onClick={handleOpenImportModal}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-sm font-bold border border-emerald-200 shadow-xs transition-all cursor-pointer"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-sm font-bold border border-indigo-200 shadow-xs transition-all cursor-pointer"
           >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-            Import CSV
+            <FileSpreadsheet className="w-4 h-4 text-indigo-600" />
+            Import CSV / Excel
           </button>
 
           <button
@@ -1267,11 +1288,11 @@ export const StudentManagement: React.FC = () => {
         </div>
       </Modal>
 
-      {/* MODAL: Student CSV Batch Import */}
+      {/* MODAL: Student CSV / Excel Batch Import */}
       <Modal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
-        title="Import Students from CSV"
+        title="Import Students (CSV & Excel XLSX)"
         subtitle="Bulk enroll students with automated category detection from class mapping"
         maxWidth="4xl"
       >
@@ -1281,7 +1302,7 @@ export const StudentManagement: React.FC = () => {
             <div className="space-y-1 text-xs">
               <p className="font-bold text-indigo-900 flex items-center gap-1.5">
                 <FileText className="w-4 h-4 text-indigo-600" />
-                Candidate CSV Format Instructions
+                Candidate CSV & Excel Format Instructions
               </p>
               <div className="text-slate-600 leading-relaxed font-medium space-y-1">
                 <p>
@@ -1293,14 +1314,26 @@ export const StudentManagement: React.FC = () => {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={handleDownloadSampleCSV}
-              className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 text-xs font-bold shadow-2xs shrink-0 flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
-            >
-              <Download className="w-3.5 h-3.5 text-indigo-600" />
-              Download Template
-            </button>
+            <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={handleDownloadSampleExcel}
+                className="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                title="Download formatted Excel (.xlsx) template"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-600" />
+                Template (Excel)
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadSampleCSV}
+                className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                title="Download CSV format template"
+              >
+                <Download className="w-3.5 h-3.5 text-indigo-600" />
+                Template (CSV)
+              </button>
+            </div>
           </div>
 
           {/* File Upload Drop Area */}
@@ -1311,7 +1344,7 @@ export const StudentManagement: React.FC = () => {
             <input
               type="file"
               ref={fileInputRef}
-              accept=".csv"
+              accept=".csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
               onChange={handleFileUpload}
               className="hidden"
             />
@@ -1320,9 +1353,9 @@ export const StudentManagement: React.FC = () => {
             </div>
             <div>
               <p className="text-sm font-bold text-slate-800">
-                {csvFileName ? `Selected: ${csvFileName}` : 'Click to select or drop your Candidate CSV file'}
+                {csvFileName ? `Selected: ${csvFileName}` : 'Click to select or drop your Candidate CSV or Excel (.xlsx) file'}
               </p>
-              <p className="text-xs text-slate-500 mt-0.5">Supports UTF-8 formatted .csv files</p>
+              <p className="text-xs text-slate-500 mt-0.5">Supports Excel (.xlsx, .xls) and UTF-8 (.csv) files</p>
             </div>
           </div>
 

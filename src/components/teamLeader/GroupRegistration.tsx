@@ -7,6 +7,9 @@ import {
   generateSampleGroupRegCSV,
   validateGroupRegCSVRows,
   triggerFileDownload,
+  triggerExcelDownload,
+  readSpreadsheetFileAsText,
+  downloadGroupRegTemplate,
   ParsedGroupRegRow
 } from '../../utils/csvHelpers';
 import { isCategoryMatch } from '../../utils/validations';
@@ -116,13 +119,13 @@ export const GroupRegistration: React.FC = () => {
     availableCategories[0]?.category || 'SENIOR'
   );
 
-  // CSV Template Download
+  // Template Downloads (CSV & Excel)
+  const handleDownloadTemplate = (format: 'csv' | 'xlsx', allCategories: boolean = false) => {
+    downloadGroupRegTemplate(format, programs, students, currentUser.teamId, selectedCategory, allCategories);
+  };
+
   const handleDownloadSampleCSV = (allCategories: boolean = false) => {
-    const csvContent = generateSampleGroupRegCSV(programs, students, currentUser.teamId, selectedCategory, allCategories);
-    const filename = allCategories
-      ? `group_registration_bulk_all_categories.csv`
-      : `group_registration_template_${selectedCategory.toLowerCase()}.csv`;
-    triggerFileDownload(csvContent, filename);
+    downloadGroupRegTemplate('xlsx', programs, students, currentUser.teamId, selectedCategory, allCategories);
   };
 
   const handleOpenImportModal = () => {
@@ -135,14 +138,13 @@ export const GroupRegistration: React.FC = () => {
     setIsImportModalOpen(true);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setCsvFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = event => {
-      const text = event.target?.result as string;
+    try {
+      const text = await readSpreadsheetFileAsText(file);
       if (text) {
         const result = validateGroupRegCSVRows(
           text,
@@ -156,8 +158,9 @@ export const GroupRegistration: React.FC = () => {
         setCsvValidCount(result.validCount);
         setCsvErrorCount(result.errorCount);
       }
-    };
-    reader.readAsText(file);
+    } catch (err: any) {
+      alert('Failed to read spreadsheet file: ' + (err?.message || 'Unknown error'));
+    }
   };
 
   const handleCommitCSVImport = () => {
@@ -707,7 +710,7 @@ export const GroupRegistration: React.FC = () => {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl hover:opacity-95 disabled:opacity-50 text-white text-xs font-bold transition-all cursor-pointer"
           >
             <Upload className="w-3.5 h-3.5" />
-            Upload CSV
+            Import CSV / Excel
           </button>
 
           {/* Global Lock Warning Indicator */}
@@ -1683,7 +1686,7 @@ export const GroupRegistration: React.FC = () => {
             <div className="flex items-start gap-2.5">
               <FileSpreadsheet className="w-5 h-5 shrink-0 mt-0.5" style={{ color: teamColor }} />
               <div>
-                <p className="font-bold text-slate-900">Group CSV Structure Requirements</p>
+                <p className="font-bold text-slate-900">CSV & Excel Spreadsheet Requirements</p>
                 <p className="text-slate-600 mt-0.5">
                   Columns: <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200" style={{ color: teamColor }}>ProgramCode</code>,{' '}
                   <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200 text-slate-700">Category</code>,{' '}
@@ -1696,24 +1699,32 @@ export const GroupRegistration: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+            <div className="flex items-center gap-1.5 flex-wrap shrink-0 self-start sm:self-auto">
               <button
-                onClick={() => handleDownloadSampleCSV(true)}
+                onClick={() => handleDownloadTemplate('xlsx', true)}
                 style={{ backgroundColor: teamColor, boxShadow: `0 2px 8px 0 ${teamColor}35` }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-white font-bold transition-colors cursor-pointer"
-                title="Download bulk list containing all group programs across all categories"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-white text-xs font-bold transition-colors cursor-pointer"
+                title="Download bulk Excel (.xlsx) containing all group programs across all categories"
               >
                 <Download className="w-3.5 h-3.5" />
-                All Categories (Bulk)
+                All (Excel)
               </button>
               <button
-                onClick={() => handleDownloadSampleCSV(false)}
+                onClick={() => handleDownloadTemplate('xlsx', false)}
                 style={{ color: teamColor, borderColor: `${teamColor}40` }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 font-semibold border shadow-2xs transition-colors cursor-pointer"
-                title={`Download template for ${selectedCategory}`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-xs font-semibold border shadow-2xs transition-colors cursor-pointer"
+                title={`Download Excel template for ${selectedCategory}`}
               >
                 <Download className="w-3.5 h-3.5" />
-                {selectedCategory} Only
+                {selectedCategory} (Excel)
+              </button>
+              <button
+                onClick={() => handleDownloadTemplate('csv', true)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium transition-colors cursor-pointer"
+                title="Download CSV format template"
+              >
+                <Download className="w-3 h-3 text-slate-500" />
+                CSV
               </button>
             </div>
           </div>
@@ -1723,7 +1734,7 @@ export const GroupRegistration: React.FC = () => {
             <input
               type="file"
               ref={fileInputRef}
-              accept=".csv,text/csv"
+              accept=".csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
               onChange={handleFileUpload}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             />
@@ -1736,10 +1747,10 @@ export const GroupRegistration: React.FC = () => {
               </div>
               <div>
                 <p className="text-sm font-bold text-slate-800">
-                  {csvFileName ? `Selected: ${csvFileName}` : 'Click or drag & drop a .CSV file here'}
+                  {csvFileName ? `Selected: ${csvFileName}` : 'Click or drag & drop a .CSV or Excel (.xlsx) file here'}
                 </p>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Validates required group member counts, house quotas, and student eligibility.
+                  Validates required group member counts, house quotas, and student eligibility. Supports .csv and .xlsx.
                 </p>
               </div>
             </div>

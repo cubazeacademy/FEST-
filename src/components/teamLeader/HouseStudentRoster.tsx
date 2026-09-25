@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useFestData } from '../../context/FestDataContext';
 import { useAuth } from '../../context/AuthContext';
 import { Student, FestCategory } from '../../types';
+import { triggerExcelDownload, triggerFileDownload } from '../../utils/csvHelpers';
 import { SectionBadge, CategoryBadge, PositionBadge, GradeBadge } from '../common/Badge';
 import { Modal } from '../common/Modal';
 import {
@@ -256,7 +257,7 @@ export const HouseStudentRoster: React.FC<HouseStudentRosterProps> = ({
     };
   }, [houseStudents, studentScoreMap, studentProgramsMap, isArtsEnabled, isSportsEnabled]);
 
-  const handleExportCSV = () => {
+  const handleExportSpreadsheet = (format: 'csv' | 'xlsx' = 'xlsx') => {
     const headers = [
       'Chest No',
       'Student Name',
@@ -282,12 +283,12 @@ export const HouseStudentRoster: React.FC<HouseStudentRosterProps> = ({
       const sPts = isSportsEnabled ? (score?.sportsIndividualPoints || 0) : 0;
 
       return [
-        stu.chestNumber || '-',
-        `"${stu.name}"`,
+        stu.chestNumber || '',
+        stu.name,
         stu.admissionNo,
-        `"${stu.classNumber || '-'}"`,
+        stu.classNumber || '-',
         stu.category,
-        `"${myTeam?.name || 'House'}"`,
+        myTeam?.name || 'House',
         progs.length,
         ...(isArtsEnabled ? [aPts] : []),
         ...(isSportsEnabled ? [sPts] : []),
@@ -295,19 +296,21 @@ export const HouseStudentRoster: React.FC<HouseStudentRosterProps> = ({
         score?.firstCount || 0,
         score?.secondCount || 0,
         score?.thirdCount || 0,
-        `"${progTitles}"`
+        progTitles
       ];
     });
 
-    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `${myTeam?.code || 'House'}_Students_Performance_Roster.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const fullData = [headers, ...rows];
+    const filename = `${myTeam?.code || 'House'}_Students_Performance_Roster_${Date.now()}`;
+
+    if (format === 'xlsx') {
+      triggerExcelDownload(fullData, `${filename}.xlsx`, 'HouseRoster');
+    } else {
+      const csvContent = fullData
+        .map(row => row.map(cell => (typeof cell === 'string' && (cell.includes(',') || cell.includes('"')) ? `"${cell.replace(/"/g, '""')}"` : cell)).join(','))
+        .join('\n');
+      triggerFileDownload(csvContent, `${filename}.csv`);
+    }
   };
 
   const handleRegisterNew = (studentId: string) => {
@@ -373,13 +376,24 @@ export const HouseStudentRoster: React.FC<HouseStudentRosterProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 shrink-0">
-            <button
-              onClick={handleExportCSV}
-              className="px-4 sm:px-5 py-2.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs sm:text-sm font-bold shadow-xs hover:shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-95"
-            >
-              <Download className="w-4 h-4 text-slate-600" />
-              <span>Export CSV</span>
-            </button>
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border border-slate-200">
+              <button
+                onClick={() => handleExportSpreadsheet('xlsx')}
+                className="px-3 sm:px-4 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-emerald-700 text-xs font-bold shadow-2xs border border-emerald-200/60 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                title="Export House Student Performance Roster to Excel (.xlsx)"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Excel</span>
+              </button>
+              <button
+                onClick={() => handleExportSpreadsheet('csv')}
+                className="px-3 sm:px-4 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-2xs border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                title="Export House Student Performance Roster to CSV"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+            </div>
             <button
               onClick={() => setActiveTab('tl_reg_individual')}
               disabled={!settings.registrationOpen}

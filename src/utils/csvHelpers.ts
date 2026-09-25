@@ -1,5 +1,29 @@
+import * as XLSX from 'xlsx';
 import { Student, Program, Team, ClassCategoryMapping, CategoryConfig, FestSection, FestCategory, ProgramType, ProgramSubsection, Registration } from '../types';
 import { resolveCategoryFromClass } from './validations';
+
+/**
+ * Universal Spreadsheet file reader (supports .csv, .xlsx, .xls)
+ * Converts any tabular file into standardized CSV string for validation & processing
+ */
+export async function readSpreadsheetFileAsText(file: File): Promise<string> {
+  const isExcel = /\.(xlsx|xls)$/i.test(file.name);
+  if (isExcel) {
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const firstSheetName = workbook.SheetNames[0];
+    if (!firstSheetName) return '';
+    const worksheet = workbook.Sheets[firstSheetName];
+    return XLSX.utils.sheet_to_csv(worksheet);
+  } else {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve((e.target?.result as string) || '');
+      reader.onerror = err => reject(err);
+      reader.readAsText(file);
+    });
+  }
+}
 
 /**
  * Universal CSV line parser handling commas, quotes, and whitespace
@@ -55,6 +79,21 @@ export function triggerFileDownload(content: string, filename: string, mimeType 
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Trigger Excel (.xlsx) file download
+ */
+export function triggerExcelDownload(
+  data: (string | number | undefined | null)[][],
+  filename: string,
+  sheetName = 'Sheet1'
+) {
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  const cleanFilename = filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`;
+  XLSX.writeFile(wb, cleanFilename);
+}
+
 /* ==========================================================================
    STUDENT CSV TEMPLATES & VALIDATION
    ========================================================================== */
@@ -69,12 +108,10 @@ export const STUDENT_CSV_HEADERS = [
   'Category'
 ];
 
-export function generateSampleStudentCSV(
+export function generateSampleStudentData(
   categoryConfigs?: CategoryConfig[],
   teams?: Team[]
-): string {
-  const headers = STUDENT_CSV_HEADERS.join(',');
-  
+): (string | number)[][] {
   const sampleCandidates = [
     { name: 'AIMAN SAHDIY P', adm: '1143', house: 'SARAHA', chest: 101, class: '' },
     { name: 'SAHD SALMI MUKKATTIL', adm: '1144', house: 'SEBAT', chest: 102, class: '' },
@@ -109,13 +146,35 @@ export function generateSampleStudentCSV(
     const catName = categoryConfigs && categoryConfigs.length > 0
       ? categoryConfigs[idx % categoryConfigs.length].displayName || categoryConfigs[idx % categoryConfigs.length].category
       : defaultCategory;
-    const chestStr = c.chest ? c.chest.toString() : '';
+    const chestStr = c.chest ? c.chest : '';
     const classStr = c.class || '';
 
-    return `${slNo},${chestStr},${c.adm},${c.name},${classStr},${houseName},${catName}`;
+    return [slNo, chestStr, c.adm, c.name, classStr, houseName, catName];
   });
 
-  return `${headers}\n${rows.join('\n')}\n`;
+  return [STUDENT_CSV_HEADERS, ...rows];
+}
+
+export function generateSampleStudentCSV(
+  categoryConfigs?: CategoryConfig[],
+  teams?: Team[]
+): string {
+  const data = generateSampleStudentData(categoryConfigs, teams);
+  return data.map(row => row.map(cell => (typeof cell === 'string' && cell.includes(',') ? `"${cell}"` : cell)).join(',')).join('\n') + '\n';
+}
+
+export function downloadStudentTemplate(
+  format: 'csv' | 'xlsx',
+  categoryConfigs?: CategoryConfig[],
+  teams?: Team[]
+) {
+  if (format === 'xlsx') {
+    const data = generateSampleStudentData(categoryConfigs, teams);
+    triggerExcelDownload(data, 'candidate_upload_template.xlsx', 'Candidates');
+  } else {
+    const csv = generateSampleStudentCSV(categoryConfigs, teams);
+    triggerFileDownload(csv, 'candidate_upload_template.csv');
+  }
 }
 
 export interface ParsedStudentRow {
@@ -379,9 +438,7 @@ export const PROGRAM_CSV_HEADERS = [
   'Rules'
 ];
 
-export function generateSampleProgramCSV(categoryConfigs?: CategoryConfig[]): string {
-  const headers = PROGRAM_CSV_HEADERS.join(',');
-  
+export function generateSampleProgramData(categoryConfigs?: CategoryConfig[]): (string | number)[][] {
   if (categoryConfigs && categoryConfigs.length > 0) {
     const sampleTemplates = [
       { code: 'ART-STG-01', name: 'Classical Vocal Solo', section: 'ARTS', sub: 'STAGE', type: 'INDIVIDUAL', min: 1, max: 1, loc: 'Main Auditorium', time: 'Day 1 - 10:00 AM', rules: 'Classical raga vocal (10 mins)' },
@@ -394,21 +451,39 @@ export function generateSampleProgramCSV(categoryConfigs?: CategoryConfig[]): st
 
     const rows = sampleTemplates.map((tpl, i) => {
       const cat = categoryConfigs[i % categoryConfigs.length].category;
-      return `${tpl.code},${tpl.name},${tpl.section},${tpl.sub},${cat},${tpl.type},${tpl.min},${tpl.max},${tpl.loc},${tpl.time},${tpl.rules}`;
+      return [tpl.code, tpl.name, tpl.section, tpl.sub, cat, tpl.type, tpl.min, tpl.max, tpl.loc, tpl.time, tpl.rules];
     });
 
-    return `${headers}\n${rows.join('\n')}\n`;
+    return [PROGRAM_CSV_HEADERS, ...rows];
   }
 
-  const sampleRows = [
-    'ART-STG-10,Classical Carnatic Vocal,ARTS,STAGE,SENIOR,INDIVIDUAL,1,1,Main Auditorium,Day 1 - 10:00 AM,Classical Carnatic raga performance (10 mins)',
-    'ART-STG-11,Folk Dance Group,ARTS,STAGE,SUPER_SENIOR,GROUP,4,10,Main Auditorium,Day 2 - 03:00 PM,Traditional Indian folk dance with costumes',
-    'ART-NST-10,Clay Modeling,ARTS,NON_STAGE,JUNIOR,INDIVIDUAL,1,1,Art Room 102,Day 1 - 01:00 PM,Clay provided on spot. 1.5 hours',
-    'SPT-TRK-10,200m Sprint,SPORTS,SPORTS_EVENT,SENIOR,INDIVIDUAL,1,1,Athletics Track,Day 1 - 09:30 AM,Standard track sprint',
-    'SPT-TRK-11,4x400m Mixed Relay,SPORTS,SPORTS_EVENT,SUPER_SENIOR,GROUP,4,4,Athletics Track,Day 2 - 04:30 PM,2 Boys and 2 Girls per house contingent',
-    'GEN-EVT-01,Fest Grand Quiz Bowl,ARTS,STAGE,SUPER_SENIOR,GENERAL,2,4,Seminar Hall A,Day 2 - 11:00 AM,Inter-house open quiz championship'
+  const sampleRows: (string | number)[][] = [
+    ['ART-STG-10', 'Classical Carnatic Vocal', 'ARTS', 'STAGE', 'SENIOR', 'INDIVIDUAL', 1, 1, 'Main Auditorium', 'Day 1 - 10:00 AM', 'Classical Carnatic raga performance (10 mins)'],
+    ['ART-STG-11', 'Folk Dance Group', 'ARTS', 'STAGE', 'SUPER_SENIOR', 'GROUP', 4, 10, 'Main Auditorium', 'Day 2 - 03:00 PM', 'Traditional Indian folk dance with costumes'],
+    ['ART-NST-10', 'Clay Modeling', 'ARTS', 'NON_STAGE', 'JUNIOR', 'INDIVIDUAL', 1, 1, 'Art Room 102', 'Day 1 - 01:00 PM', 'Clay provided on spot. 1.5 hours'],
+    ['SPT-TRK-10', '200m Sprint', 'SPORTS', 'SPORTS_EVENT', 'SENIOR', 'INDIVIDUAL', 1, 1, 'Athletics Track', 'Day 1 - 09:30 AM', 'Standard track sprint'],
+    ['SPT-TRK-11', '4x400m Mixed Relay', 'SPORTS', 'SPORTS_EVENT', 'SUPER_SENIOR', 'GROUP', 4, 4, 'Athletics Track', 'Day 2 - 04:30 PM', '2 Boys and 2 Girls per house contingent'],
+    ['GEN-EVT-01', 'Fest Grand Quiz Bowl', 'ARTS', 'STAGE', 'SUPER_SENIOR', 'GENERAL', 2, 4, 'Seminar Hall A', 'Day 2 - 11:00 AM', 'Inter-house open quiz championship']
   ];
-  return `${headers}\n${sampleRows.join('\n')}\n`;
+  return [PROGRAM_CSV_HEADERS, ...sampleRows];
+}
+
+export function generateSampleProgramCSV(categoryConfigs?: CategoryConfig[]): string {
+  const data = generateSampleProgramData(categoryConfigs);
+  return data.map(row => row.map(cell => (typeof cell === 'string' && cell.includes(',') ? `"${cell}"` : cell)).join(',')).join('\n') + '\n';
+}
+
+export function downloadProgramTemplate(
+  format: 'csv' | 'xlsx',
+  categoryConfigs?: CategoryConfig[]
+) {
+  if (format === 'xlsx') {
+    const data = generateSampleProgramData(categoryConfigs);
+    triggerExcelDownload(data, 'programs_sample_template.xlsx', 'Programs');
+  } else {
+    const csv = generateSampleProgramCSV(categoryConfigs);
+    triggerFileDownload(csv, 'programs_sample_template.csv');
+  }
 }
 
 export interface ParsedProgramRow {
@@ -683,13 +758,13 @@ export interface ParsedIndividualRegRow {
   warnings: string[];
 }
 
-export function generateSampleIndividualRegCSV(
+export function generateSampleIndividualRegData(
   programs: Program[],
   students: Student[],
   teamId?: string,
   category?: FestCategory,
   allCategories = false
-): string {
+): (string | number)[][] {
   // Filter individual programs - all categories if allCategories is true or no category specified
   const indProgs = programs.filter(p => {
     if (p.programType !== 'INDIVIDUAL') return false;
@@ -711,10 +786,10 @@ export function generateSampleIndividualRegCSV(
     'Category',
     'AllottedLimit',
     ...Array.from({ length: maxSlotsAcross }, (_, i) => `Candidate_${i + 1}`)
-  ].join(',');
+  ];
 
   if (indProgs.length > 0) {
-    const rows: string[] = [];
+    const rows: (string | number)[][] = [];
     
     // Group programs by category and sort by code
     const sortedProgs = [...indProgs].sort((a, b) => {
@@ -732,36 +807,67 @@ export function generateSampleIndividualRegCSV(
         s => s.status === 'ACTIVE' && (!teamId || s.teamId === teamId) && s.category === prog.category
       );
 
-      const candidateCols: string[] = [];
+      const candidateCols: (string | number)[] = [];
       for (let slot = 0; slot < maxSlotsAcross; slot++) {
         if (slot < allotted && eligibleStudents.length > 0) {
           const stud = eligibleStudents[studentPointer % eligibleStudents.length];
           studentPointer++;
           // Provide student chest number (or admission number) for instant auto-detection
-          const candidateVal = stud.chestNumber ? stud.chestNumber.toString() : stud.admissionNo;
+          const candidateVal = stud.chestNumber ? stud.chestNumber : stud.admissionNo;
           candidateCols.push(candidateVal);
         } else {
           candidateCols.push('');
         }
       }
 
-      const safeProgName = prog.name.includes(',') ? `"${prog.name}"` : prog.name;
-      rows.push(`${prog.code},${safeProgName},${prog.category},${allotted},${candidateCols.join(',')}`);
+      rows.push([prog.code, prog.name, prog.category, allotted, ...candidateCols]);
     }
 
-    return `${headers}\n${rows.join('\n')}\n`;
+    return [headers, ...rows];
   }
 
-  const fallback = [
-    'ART-NS-01,PENCIL DRAWING,SUB_JUNIOR,1,101,104',
-    'ART-NS-02,TYPING MASTER,SUB_JUNIOR,1,101,104',
-    'ART-NS-03,ESSAY WRITING,JUNIOR,1,201,204',
-    'ART-NS-04,GK QUIZ,JUNIOR,1,201,204',
-    'ART-NS-05,POEM WRITING,SENIOR,1,301,304',
-    'ART-NS-06,MEMORY TEST,SENIOR,1,301,304',
-    'SPT-01,100M SPRINT,SUPER_SENIOR,1,401,404'
+  const fallback: (string | number)[][] = [
+    ['ART-NS-01', 'PENCIL DRAWING', 'SUB_JUNIOR', 1, 101, 104],
+    ['ART-NS-02', 'TYPING MASTER', 'SUB_JUNIOR', 1, 101, 104],
+    ['ART-NS-03', 'ESSAY WRITING', 'JUNIOR', 1, 201, 204],
+    ['ART-NS-04', 'GK QUIZ', 'JUNIOR', 1, 201, 204],
+    ['ART-NS-05', 'POEM WRITING', 'SENIOR', 1, 301, 304],
+    ['ART-NS-06', 'MEMORY TEST', 'SENIOR', 1, 301, 304],
+    ['SPT-01', '100M SPRINT', 'SUPER_SENIOR', 1, 401, 404]
   ];
-  return `${headers}\n${fallback.join('\n')}\n`;
+  return [headers, ...fallback];
+}
+
+export function generateSampleIndividualRegCSV(
+  programs: Program[],
+  students: Student[],
+  teamId?: string,
+  category?: FestCategory,
+  allCategories = false
+): string {
+  const data = generateSampleIndividualRegData(programs, students, teamId, category, allCategories);
+  return data.map(row => row.map(cell => (typeof cell === 'string' && cell.includes(',') ? `"${cell}"` : cell)).join(',')).join('\n') + '\n';
+}
+
+export function downloadIndividualRegTemplate(
+  format: 'csv' | 'xlsx',
+  programs: Program[],
+  students: Student[],
+  teamId?: string,
+  category?: FestCategory,
+  allCategories = false
+) {
+  const filename = allCategories
+    ? `individual_registration_bulk_all_categories.${format}`
+    : `individual_registration_template_${(category || 'all').toLowerCase()}.${format}`;
+
+  if (format === 'xlsx') {
+    const data = generateSampleIndividualRegData(programs, students, teamId, category, allCategories);
+    triggerExcelDownload(data, filename, 'Registrations');
+  } else {
+    const csv = generateSampleIndividualRegCSV(programs, students, teamId, category, allCategories);
+    triggerFileDownload(csv, filename);
+  }
 }
 
 export function validateIndividualRegCSVRows(
@@ -1142,15 +1248,13 @@ export interface ParsedGroupRegRow {
   warnings: string[];
 }
 
-export function generateSampleGroupRegCSV(
+export function generateSampleGroupRegData(
   programs: Program[],
   students: Student[],
   teamId?: string,
   category?: FestCategory,
   allCategories = false
-): string {
-  const headers = GROUP_REG_CSV_HEADERS.join(',');
-  
+): (string | number)[][] {
   const groupProgs = programs.filter(p => {
     const isGroup = p.programType === 'GROUP' || p.programType === 'GENERAL';
     if (!isGroup) return false;
@@ -1159,7 +1263,7 @@ export function generateSampleGroupRegCSV(
   });
 
   if (groupProgs.length > 0) {
-    const rows: string[] = [];
+    const rows: (string | number)[][] = [];
     
     // Sort cleanly by category and code
     const sortedProgs = [...groupProgs].sort((a, b) => {
@@ -1180,20 +1284,51 @@ export function generateSampleGroupRegCSV(
         ? teamStudents.slice(0, needed).map(s => (s.chestNumber ? s.chestNumber.toString() : s.admissionNo)).join(';')
         : '101;104';
 
-      const safeProgName = prog.name.includes(',') ? `"${prog.name}"` : prog.name;
       const grpName = `${prog.name} Contingent ${idx + 1}`;
-      rows.push(`${prog.code},${safeProgName},${prog.category},${minP},${maxP},${grpName},${sampleAdms}`);
+      rows.push([prog.code, prog.name, prog.category, minP, maxP, grpName, sampleAdms]);
     });
 
-    return `${headers}\n${rows.join('\n')}\n`;
+    return [GROUP_REG_CSV_HEADERS, ...rows];
   }
 
-  const fallback = [
-    'ART-STG-01,GROUP SONG,SUB_JUNIOR,2,4,Junior Group Song Contingent,101;104',
-    'ART-STG-02,FOLK CHORUS,SENIOR,4,10,Ruby Folk Chorus,301;302;303;304',
-    'SPT-TRK-02,SPRINT RELAY,SUPER_SENIOR,4,4,Sprint Relay Team,401;402;403;404'
+  const fallback: (string | number)[][] = [
+    ['ART-STG-01', 'GROUP SONG', 'SUB_JUNIOR', 2, 4, 'Junior Group Song Contingent', '101;104'],
+    ['ART-STG-02', 'FOLK CHORUS', 'SENIOR', 4, 10, 'Ruby Folk Chorus', '301;302;303;304'],
+    ['SPT-TRK-02', 'SPRINT RELAY', 'SUPER_SENIOR', 4, 4, 'Sprint Relay Team', '401;402;403;404']
   ];
-  return `${headers}\n${fallback.join('\n')}\n`;
+  return [GROUP_REG_CSV_HEADERS, ...fallback];
+}
+
+export function generateSampleGroupRegCSV(
+  programs: Program[],
+  students: Student[],
+  teamId?: string,
+  category?: FestCategory,
+  allCategories = false
+): string {
+  const data = generateSampleGroupRegData(programs, students, teamId, category, allCategories);
+  return data.map(row => row.map(cell => (typeof cell === 'string' && cell.includes(',') ? `"${cell}"` : cell)).join(',')).join('\n') + '\n';
+}
+
+export function downloadGroupRegTemplate(
+  format: 'csv' | 'xlsx',
+  programs: Program[],
+  students: Student[],
+  teamId?: string,
+  category?: FestCategory,
+  allCategories = false
+) {
+  const filename = allCategories
+    ? `group_registration_bulk_all_categories.${format}`
+    : `group_registration_template_${(category || 'all').toLowerCase()}.${format}`;
+
+  if (format === 'xlsx') {
+    const data = generateSampleGroupRegData(programs, students, teamId, category, allCategories);
+    triggerExcelDownload(data, filename, 'GroupRegistrations');
+  } else {
+    const csv = generateSampleGroupRegCSV(programs, students, teamId, category, allCategories);
+    triggerFileDownload(csv, filename);
+  }
 }
 
 export function validateGroupRegCSVRows(
@@ -1395,4 +1530,127 @@ export function validateGroupRegCSVRows(
 
   return { rows, validCount, errorCount };
 }
+
+/* ==========================================================================
+   SPREADSHEET EXPORT HELPERS (CSV & XLSX)
+   ========================================================================== */
+
+export function exportStudentsToSpreadsheet(
+  students: Student[],
+  teams: Team[],
+  format: 'csv' | 'xlsx' = 'xlsx',
+  filename = 'candidates_roster'
+) {
+  const teamMap = new Map<string, string>();
+  teams.forEach(t => {
+    teamMap.set(t.id, t.name);
+    teamMap.set(t.code, t.name);
+  });
+
+  const headers = ['Sl No', 'Chest No', 'Admission No', 'Candidate Name', 'Class', 'Section', 'House / Team', 'Category', 'Status'];
+  const dataRows = students.map((s, idx) => [
+    idx + 1,
+    s.chestNumber || '',
+    s.admissionNo,
+    s.name,
+    s.classNumber || '-',
+    s.sectionLetter || 'A',
+    teamMap.get(s.teamId) || s.teamId || '-',
+    s.category || '-',
+    s.status || 'ACTIVE'
+  ]);
+
+  const fullData = [headers, ...dataRows];
+
+  if (format === 'xlsx') {
+    triggerExcelDownload(fullData, `${filename}.xlsx`, 'Candidates');
+  } else {
+    const csvContent = fullData
+      .map(row => row.map(cell => (typeof cell === 'string' && (cell.includes(',') || cell.includes('"')) ? `"${cell.replace(/"/g, '""')}"` : cell)).join(','))
+      .join('\n');
+    triggerFileDownload(csvContent, `${filename}.csv`);
+  }
+}
+
+export function exportProgramsToSpreadsheet(
+  programs: Program[],
+  format: 'csv' | 'xlsx' = 'xlsx',
+  filename = 'programs_list'
+) {
+  const headers = ['Code', 'Name', 'Section', 'Subsection', 'Category', 'Type', 'Min Participants', 'Max Participants', 'Location', 'Schedule', 'Rules'];
+  const dataRows = programs.map(p => [
+    p.code,
+    p.name,
+    p.section,
+    p.subsection,
+    p.category,
+    p.programType,
+    p.minParticipants || 1,
+    p.maxParticipants || 1,
+    p.stageLocation || '',
+    p.scheduleTime || '',
+    p.rules || ''
+  ]);
+
+  const fullData = [headers, ...dataRows];
+
+  if (format === 'xlsx') {
+    triggerExcelDownload(fullData, `${filename}.xlsx`, 'Programs');
+  } else {
+    const csvContent = fullData
+      .map(row => row.map(cell => (typeof cell === 'string' && (cell.includes(',') || cell.includes('"')) ? `"${cell.replace(/"/g, '""')}"` : cell)).join(','))
+      .join('\n');
+    triggerFileDownload(csvContent, `${filename}.csv`);
+  }
+}
+
+export function exportRegistrationsToSpreadsheet(
+  registrations: Registration[],
+  format: 'csv' | 'xlsx' = 'xlsx',
+  filename = 'fest_registrations_master'
+) {
+  const headers = [
+    'Registration ID',
+    'Section',
+    'Category',
+    'Program Code / Name',
+    'Event Type',
+    'House / Team',
+    'Chest No',
+    'Participant / Group Name',
+    'Admission No',
+    'Members Count',
+    'Group Members',
+    'Status',
+    'Registration Date'
+  ];
+
+  const dataRows = registrations.map(r => [
+    r.id,
+    r.section,
+    r.category,
+    r.programName,
+    r.programType,
+    r.teamName,
+    r.chestNumber || '',
+    r.studentName || r.groupName || '',
+    r.admissionNo || '',
+    r.groupMembers ? r.groupMembers.length : 1,
+    r.groupMembers ? r.groupMembers.map(m => `${m.name} (${m.admissionNo}${m.chestNumber ? ` #${m.chestNumber}` : ''})`).join('; ') : '',
+    r.status || 'CONFIRMED',
+    r.timestamp || ''
+  ]);
+
+  const fullData = [headers, ...dataRows];
+
+  if (format === 'xlsx') {
+    triggerExcelDownload(fullData, `${filename}.xlsx`, 'Registrations');
+  } else {
+    const csvContent = fullData
+      .map(row => row.map(cell => (typeof cell === 'string' && (cell.includes(',') || cell.includes('"')) ? `"${cell.replace(/"/g, '""')}"` : cell)).join(','))
+      .join('\n');
+    triggerFileDownload(csvContent, `${filename}.csv`);
+  }
+}
+
 
