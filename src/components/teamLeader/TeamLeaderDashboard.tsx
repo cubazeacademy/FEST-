@@ -591,21 +591,6 @@ export const TeamLeaderDashboard: React.FC<TeamLeaderDashboardProps> = ({ setAct
         </div>
       </div>
 
-      {/* Registration Status Alert (if closed) */}
-      {!settings.registrationOpen && (
-        <div className="p-4 sm:p-5 rounded-3xl bg-rose-50 border border-rose-200/80 text-rose-900 text-sm flex items-center gap-3.5 shadow-xs">
-          <div className="w-10 h-10 rounded-2xl bg-rose-100 flex items-center justify-center shrink-0">
-            <AlertCircle className="w-5 h-5 text-rose-600" />
-          </div>
-          <div>
-            <p className="font-bold text-base text-rose-950">Registration Window is Currently Locked</p>
-            <p className="text-rose-700 mt-0.5 text-xs sm:text-sm font-medium">
-              New event enrolments are restricted by Festival Central. You can track all house category standings, candidate scores, and scheduled venues below.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* ========================================================================= */}
       {/* 2. BENTO-STYLE KPI METRIC CARDS (DYNAMIC TEAM COLOR THEME)               */}
       {/* ========================================================================= */}
