@@ -333,19 +333,8 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             if (d.classMappings) setClassMappings(d.classMappings);
             if (d.programs) setPrograms(d.programs);
             
-            // Safe merge registrations to avoid overwriting recent local additions
             if (Array.isArray(d.registrations)) {
-              setRegistrations(prev => {
-                const remoteMap = new Map((d.registrations as Registration[]).map(r => [r.id, r]));
-                // Keep local records that may be in-flight
-                const merged = [...d.registrations];
-                for (const localReg of prev) {
-                  if (!remoteMap.has(localReg.id)) {
-                    merged.push(localReg);
-                  }
-                }
-                return merged;
-              });
+              setRegistrations(d.registrations);
             }
 
             if (d.results) setResults(d.results);
