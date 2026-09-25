@@ -60,13 +60,31 @@ export const RegistrationMaster: React.FC = () => {
     });
   }, [registrations, isController, isArtsEnabled, isSportsEnabled]);
 
-  // Base Programs
+  // Base Programs (with strict deduplication)
   const availablePrograms = useMemo(() => {
-    return programs.filter(p => {
+    const list = programs.filter(p => {
       if (!isArtsEnabled && p.section === 'ARTS') return false;
       if (!isSportsEnabled && p.section === 'SPORTS') return false;
       return true;
     });
+
+    const seen = new Set<string>();
+    const deduplicated: Program[] = [];
+    for (const prog of list) {
+      const codeKey = prog.code ? prog.code.toLowerCase().trim() : '';
+      const nameKey = (prog.name || '').toLowerCase().trim();
+      const catKey = (prog.category || '').toLowerCase().trim();
+      const typeKey = (prog.programType || '').toLowerCase().trim();
+      const uniqueKey = codeKey ? `code:${codeKey}` : `name:${nameKey}|${catKey}|${typeKey}`;
+
+      if (!seen.has(uniqueKey) && !seen.has(prog.id)) {
+        seen.add(uniqueKey);
+        seen.add(prog.id);
+        if (codeKey) seen.add(`name:${nameKey}|${catKey}|${typeKey}`);
+        deduplicated.push(prog);
+      }
+    }
+    return deduplicated;
   }, [programs, isArtsEnabled, isSportsEnabled]);
 
   // Left Sidebar State

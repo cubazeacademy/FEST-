@@ -261,15 +261,32 @@ export const GroupRegistration: React.FC = () => {
     };
   }, [categoryConfigs]);
 
-  // All Group Programs in the selected category
+  // All Group Programs in the selected category (with strict deduplication)
   const allCategoryGroupPrograms = useMemo(() => {
-    return programs.filter(p => {
+    const list = programs.filter(p => {
       const isGroup = p.programType === 'GROUP' || p.programType === 'GENERAL';
       if (!isGroup) return false;
       if (settings.enableArtsSection === false && p.section === 'ARTS') return false;
       if (settings.enableSportsSection === false && p.section === 'SPORTS') return false;
       return p.programType === 'GENERAL' || isCategoryMatch(p.category, selectedCategory, categoryConfigs);
     });
+
+    const seen = new Set<string>();
+    const deduplicated: Program[] = [];
+    for (const prog of list) {
+      const codeKey = prog.code ? prog.code.toLowerCase().trim() : '';
+      const nameKey = (prog.name || '').toLowerCase().trim();
+      const catKey = (prog.category || '').toLowerCase().trim();
+      const uniqueKey = codeKey ? `code:${codeKey}` : `name:${nameKey}|${catKey}`;
+
+      if (!seen.has(uniqueKey) && !seen.has(prog.id)) {
+        seen.add(uniqueKey);
+        seen.add(prog.id);
+        if (codeKey) seen.add(`name:${nameKey}|${catKey}`);
+        deduplicated.push(prog);
+      }
+    }
+    return deduplicated;
   }, [programs, selectedCategory, categoryConfigs, settings.enableArtsSection, settings.enableSportsSection]);
 
   // Filter Group Programs for the left sidebar

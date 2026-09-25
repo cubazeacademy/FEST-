@@ -173,6 +173,29 @@ const STORAGE_PREFIX = 'fest_app_state_v2_';
 
 const CLIENT_INSTANCE_ID = 'tab_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
 
+export function deduplicateProgramsList(progList: Program[]): Program[] {
+  if (!Array.isArray(progList)) return [];
+  const seen = new Set<string>();
+  const result: Program[] = [];
+
+  for (const p of progList) {
+    if (!p) continue;
+    const codeKey = p.code ? p.code.toLowerCase().trim() : '';
+    const nameKey = (p.name || '').toLowerCase().trim();
+    const catKey = (p.category || '').toLowerCase().trim();
+    const typeKey = (p.programType || '').toLowerCase().trim();
+    const uniqueKey = codeKey ? `code:${codeKey}` : `name:${nameKey}|${catKey}|${typeKey}`;
+
+    if (!seen.has(uniqueKey) && !seen.has(p.id)) {
+      seen.add(uniqueKey);
+      seen.add(p.id);
+      if (codeKey) seen.add(`name:${nameKey}|${catKey}|${typeKey}`);
+      result.push(p);
+    }
+  }
+  return result;
+}
+
 export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Safe LocalStorage loader
   const loadState = <T,>(key: string, defaultVal: T): T => {
@@ -190,7 +213,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [students, setStudents] = useState<Student[]>(() => loadState('students', INITIAL_STUDENTS));
   const [categoryConfigs, setCategoryConfigs] = useState<CategoryConfig[]>(() => loadState('categoryConfigs', INITIAL_CATEGORY_CONFIGS));
   const [classMappings, setClassMappings] = useState<ClassCategoryMapping[]>(() => loadState('classMappings', INITIAL_CLASS_MAPPINGS));
-  const [programs, setPrograms] = useState<Program[]>(() => loadState('programs', INITIAL_PROGRAMS));
+  const [programs, setPrograms] = useState<Program[]>(() => deduplicateProgramsList(loadState('programs', INITIAL_PROGRAMS)));
   const [registrations, setRegistrations] = useState<Registration[]>(() => loadState('registrations', INITIAL_REGISTRATIONS));
   const [results, setResults] = useState<ProgramResult[]>(() => loadState('results', INITIAL_RESULTS));
   const [scoringConfigs, setScoringConfigs] = useState<ScoringConfigMap>(() => loadState('scoringConfigs', INITIAL_SCORING_CONFIGS));
@@ -261,7 +284,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           if (cloudData.students) setStudents(cloudData.students);
           if (cloudData.categoryConfigs) setCategoryConfigs(cloudData.categoryConfigs);
           if (cloudData.classMappings) setClassMappings(cloudData.classMappings);
-          if (cloudData.programs) setPrograms(cloudData.programs);
+          if (cloudData.programs) setPrograms(deduplicateProgramsList(cloudData.programs));
           if (cloudData.registrations) setRegistrations(cloudData.registrations);
           if (cloudData.results) setResults(cloudData.results);
           if (cloudData.scoringConfigs) {
@@ -331,7 +354,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             if (d.students) setStudents(d.students);
             if (d.categoryConfigs) setCategoryConfigs(d.categoryConfigs);
             if (d.classMappings) setClassMappings(d.classMappings);
-            if (d.programs) setPrograms(d.programs);
+            if (d.programs) setPrograms(deduplicateProgramsList(d.programs));
             
             if (Array.isArray(d.registrations)) {
               setRegistrations(d.registrations);

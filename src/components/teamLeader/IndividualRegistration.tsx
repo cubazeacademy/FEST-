@@ -262,14 +262,31 @@ export const IndividualRegistration: React.FC = () => {
     };
   }, [categoryConfigs]);
 
-  // All Individual Programs in the selected category
+  // All Individual Programs in the selected category (with strict deduplication)
   const allCategoryIndividualPrograms = useMemo(() => {
-    return programs.filter(p => {
+    const list = programs.filter(p => {
       if (p.programType !== 'INDIVIDUAL' || !isCategoryMatch(p.category, selectedCategory, categoryConfigs)) return false;
       if (settings.enableArtsSection === false && p.section === 'ARTS') return false;
       if (settings.enableSportsSection === false && p.section === 'SPORTS') return false;
       return true;
     });
+
+    const seen = new Set<string>();
+    const deduplicated: Program[] = [];
+    for (const prog of list) {
+      const codeKey = prog.code ? prog.code.toLowerCase().trim() : '';
+      const nameKey = (prog.name || '').toLowerCase().trim();
+      const catKey = (prog.category || '').toLowerCase().trim();
+      const uniqueKey = codeKey ? `code:${codeKey}` : `name:${nameKey}|${catKey}`;
+
+      if (!seen.has(uniqueKey) && !seen.has(prog.id)) {
+        seen.add(uniqueKey);
+        seen.add(prog.id);
+        if (codeKey) seen.add(`name:${nameKey}|${catKey}`);
+        deduplicated.push(prog);
+      }
+    }
+    return deduplicated;
   }, [programs, selectedCategory, categoryConfigs, settings.enableArtsSection, settings.enableSportsSection]);
 
   // Filter Individual Programs for the left sidebar
