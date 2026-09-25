@@ -291,6 +291,28 @@ export const GroupRegistration: React.FC = () => {
     return deduplicated;
   }, [programs, selectedCategory, categoryConfigs, settings.enableArtsSection, settings.enableSportsSection]);
 
+  // Pre-indexed set of registered group program keys for this team
+  const confirmedTeamGroupProgKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of registrations) {
+      if (
+        r &&
+        isTeamRegistration(r) &&
+        (r.programType === 'GROUP' || r.programType === 'GENERAL') &&
+        r.status === 'CONFIRMED'
+      ) {
+        if (r.programId) set.add(r.programId.toLowerCase().trim());
+        if ((r as any).programCode) set.add(((r as any).programCode).toLowerCase().trim());
+        if (r.programName) {
+          const normName = r.programName.toLowerCase().replace(/[\s_\-()./]/g, '').trim();
+          const normCat = (r.category || '').toLowerCase().trim();
+          set.add(`${normName}|${normCat}`);
+        }
+      }
+    }
+    return set;
+  }, [registrations, isTeamRegistration]);
+
   // Filter Group Programs for the left sidebar
   const categoryGroupPrograms = useMemo(() => {
     return allCategoryGroupPrograms.filter(p => {
@@ -307,21 +329,24 @@ export const GroupRegistration: React.FC = () => {
       if (statusFilter === 'ARTS' && p.section !== 'ARTS') return false;
       if (statusFilter === 'SPORTS' && p.section !== 'SPORTS') return false;
 
-      // Registration Status Filter
-      const teamRegs = registrations.filter(
-        r =>
-          isProgramRegistration(r, p) &&
-          isTeamRegistration(r) &&
-          (r.programType === 'GROUP' || r.programType === 'GENERAL') &&
-          r.status === 'CONFIRMED'
-      );
+      // Fast Registration Status Filter
+      const pId = (p.id || '').toLowerCase().trim();
+      const pCode = (p.code || '').toLowerCase().trim();
+      const normName = (p.name || '').toLowerCase().replace(/[\s_\-()./]/g, '').trim();
+      const normCat = (p.category || '').toLowerCase().trim();
+      const nameKey = `${normName}|${normCat}`;
 
-      if (statusFilter === 'ENTERED' && teamRegs.length === 0) return false;
-      if (statusFilter === 'NOT_ENTERED' && teamRegs.length > 0) return false;
+      const isRegistered =
+        (pId && confirmedTeamGroupProgKeys.has(pId)) ||
+        (pCode && confirmedTeamGroupProgKeys.has(pCode)) ||
+        confirmedTeamGroupProgKeys.has(nameKey);
+
+      if (statusFilter === 'ENTERED' && !isRegistered) return false;
+      if (statusFilter === 'NOT_ENTERED' && isRegistered) return false;
 
       return true;
     });
-  }, [allCategoryGroupPrograms, debouncedProgramSearch, statusFilter, registrations, isProgramRegistration, isTeamRegistration]);
+  }, [allCategoryGroupPrograms, debouncedProgramSearch, statusFilter, confirmedTeamGroupProgKeys]);
 
   // Active Selected Program ID
   const [selectedProgramId, setSelectedProgramId] = useState<string>(() => {

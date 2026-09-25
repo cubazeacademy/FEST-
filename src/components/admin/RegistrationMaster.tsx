@@ -1,10 +1,10 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useFestData } from '../../context/FestDataContext';
 import { useAuth } from '../../context/AuthContext';
 import { Modal } from '../common/Modal';
 import { Pagination } from '../common/Pagination';
 import { useDebounce } from '../../hooks/useDebounce';
-import { Program, Registration, FestCategory, Team, Student } from '../../types';
+import { Program, Registration, Team, Student } from '../../types';
 import { exportRegistrationsToSpreadsheet } from '../../utils/csvHelpers';
 import { isCategoryMatch } from '../../utils/validations';
 import {
@@ -14,22 +14,181 @@ import {
   Users,
   ChevronLeft,
   ChevronRight,
-  Filter,
-  UserPlus,
   Plus,
   Settings,
   SlidersHorizontal,
   X,
   CheckCircle2,
   AlertTriangle,
-  FileSpreadsheet,
   Table,
   LayoutGrid,
   Check,
-  Eye,
-  Layers,
   ArrowRightLeft
 } from 'lucide-react';
+
+// Helper to normalize strings for robust comparison
+const normalizeText = (text?: string): string => {
+  if (!text) return '';
+  return text.toLowerCase().replace(/[\s_\-()./]/g, '').trim();
+};
+
+// Candidate avatar initials helper
+const getInitials = (name?: string): string => {
+  if (!name) return 'CD';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+
+// =========================================================================
+// MEMOIZED SUB-COMPONENTS TO PREVENT BULK DOM RE-RENDERS
+// =========================================================================
+
+interface ProgramSidebarItemProps {
+  prog: Program;
+  isSelected: boolean;
+  regCount: number;
+  onSelect: (id: string) => void;
+}
+
+const ProgramSidebarItem = React.memo<ProgramSidebarItemProps>(({ prog, isSelected, regCount, onSelect }) => {
+  const isOpen = prog.registrationOpen !== false;
+  return (
+    <div
+      onClick={() => onSelect(prog.id)}
+      className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
+        isSelected
+          ? 'border-rose-300 bg-rose-50/40 shadow-xs ring-1 ring-rose-200'
+          : 'border-slate-200 hover:border-slate-300 bg-white'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="space-y-1">
+          <h4
+            className={`text-sm font-black tracking-tight uppercase ${
+              isSelected ? 'text-rose-600' : 'text-slate-900'
+            }`}
+          >
+            {prog.name}
+          </h4>
+          <div className="text-[11px] font-mono text-slate-500 font-semibold uppercase">
+            {prog.code} • {prog.programType} • {prog.category}
+          </div>
+          <div className="text-xs text-slate-600 font-medium pt-0.5">
+            {regCount} registered
+          </div>
+        </div>
+
+        <span
+          className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full border shrink-0 ${
+            isOpen
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : 'bg-slate-100 text-slate-600 border-slate-200'
+          }`}
+        >
+          {isOpen ? 'Open' : 'Closed'}
+        </span>
+      </div>
+    </div>
+  );
+});
+
+interface CandidateCardProps {
+  reg: Registration;
+  activeCategory: string;
+  student?: Student;
+  matchedTeam?: Team;
+  onWithdraw: (id: string, name: string) => void;
+  onInspectGroup: (reg: Registration) => void;
+}
+
+const CandidateCard = React.memo<CandidateCardProps>(({
+  reg,
+  activeCategory,
+  student,
+  matchedTeam,
+  onWithdraw,
+  onInspectGroup
+}) => {
+  const displayName = reg.studentName || student?.name || reg.groupName || 'Candidate';
+  const initials = getInitials(displayName);
+  const isGroup = reg.programType === 'GROUP' || reg.programType === 'GENERAL';
+  const displayTeamName = reg.teamName || matchedTeam?.name || 'House';
+  const displayTeamColor = reg.teamColor || matchedTeam?.color || '#ef4444';
+  const displayChestNo = reg.chestNumber || student?.chestNumber;
+  const displayCategory = reg.category || student?.category || activeCategory;
+
+  return (
+    <div className="p-4 rounded-2xl border border-slate-200/90 bg-white hover:border-slate-300 transition-all shadow-2xs hover:shadow-xs space-y-3 relative group">
+      {/* Row 1: Avatar, Name, House, and Close/Delete '×' button */}
+      <div className="flex items-start justify-between gap-2.5">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-full bg-rose-50 text-rose-600 font-black text-xs flex items-center justify-center shrink-0 border border-rose-100">
+            {initials}
+          </div>
+
+          <div className="min-w-0">
+            <h4 className="text-xs font-black text-slate-900 tracking-tight truncate uppercase">
+              {displayName}
+            </h4>
+            <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500 font-bold uppercase">
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: displayTeamColor }}
+              />
+              <span>{displayTeamName}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Delete / Withdraw × Button */}
+        <button
+          type="button"
+          onClick={() => onWithdraw(reg.id, displayName)}
+          className="text-slate-300 hover:text-rose-600 p-1 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
+          title="Withdraw / Remove Registration"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Row 2: Chest # / Category & Substitution Allowed Tag */}
+      <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] font-mono">
+        <div className="flex items-center gap-3">
+          {displayChestNo && (
+            <span className="font-bold text-slate-800">
+              {displayChestNo}
+            </span>
+          )}
+          <span className="text-slate-500 uppercase font-semibold">
+            {displayCategory}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1 text-[11px] text-rose-500 font-bold">
+          {isGroup ? (
+            <button
+              type="button"
+              onClick={() => onInspectGroup(reg)}
+              className="underline hover:text-rose-700 cursor-pointer"
+            >
+              {reg.groupMembers?.length || 0} Members
+            </button>
+          ) : (
+            <>
+              <ArrowRightLeft className="w-3 h-3 text-rose-400" />
+              <span>Substitution allowed</span>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+// =========================================================================
+// MAIN REGISTRATION MASTER COMPONENT
+// =========================================================================
 
 export const RegistrationMaster: React.FC = () => {
   const { currentUser } = useAuth();
@@ -43,8 +202,7 @@ export const RegistrationMaster: React.FC = () => {
     registerIndividualStudent,
     withdrawRegistration,
     clearAllRegistrations,
-    clearRegistrationsByTeam,
-    deleteRegistrationsBatch
+    clearRegistrationsByTeam
   } = useFestData();
 
   const isArtsEnabled = settings.enableArtsSection !== false;
@@ -89,9 +247,111 @@ export const RegistrationMaster: React.FC = () => {
     return deduplicated;
   }, [programs, isArtsEnabled, isSportsEnabled]);
 
+  // High performance student lookup maps
+  const { studentMapById, studentMapByChest } = useMemo(() => {
+    const byId = new Map<string, Student>();
+    const byChest = new Map<number, Student>();
+    students.forEach(s => {
+      byId.set(s.id, s);
+      if (s.chestNumber) byChest.set(Number(s.chestNumber), s);
+    });
+    return { studentMapById: byId, studentMapByChest: byChest };
+  }, [students]);
+
+  // High performance team lookup maps
+  const { teamById, teamByCode, teamByName } = useMemo(() => {
+    const byId = new Map<string, Team>();
+    const byCode = new Map<string, Team>();
+    const byName = new Map<string, Team>();
+    teams.forEach(t => {
+      if (t.id) byId.set(t.id.toLowerCase().trim(), t);
+      if (t.code) byCode.set(t.code.toLowerCase().trim(), t);
+      if (t.name) {
+        byName.set(t.name.toLowerCase().trim(), t);
+        byName.set(normalizeText(t.name), t);
+      }
+    });
+    return { teamById: byId, teamByCode: byCode, teamByName: byName };
+  }, [teams]);
+
+  const getRegistrationTeam = useCallback((r: Registration): Team | undefined => {
+    if (!r) return undefined;
+    if (r.teamId) {
+      const idKey = r.teamId.toLowerCase().trim();
+      const t = teamById.get(idKey) || teamByCode.get(idKey) || teamByName.get(idKey);
+      if (t) return t;
+    }
+    if (r.teamName) {
+      const nameKey = r.teamName.toLowerCase().trim();
+      const t = teamByName.get(nameKey) || teamByName.get(normalizeText(r.teamName)) || teamByCode.get(nameKey);
+      if (t) return t;
+    }
+    return undefined;
+  }, [teamById, teamByCode, teamByName]);
+
+  // High performance program lookup maps
+  const { programById, programByCode, programByNameCat } = useMemo(() => {
+    const byId = new Map<string, Program>();
+    const byCode = new Map<string, Program>();
+    const byNameCat = new Map<string, Program>();
+    programs.forEach(p => {
+      if (p.id) byId.set(p.id.toLowerCase().trim(), p);
+      if (p.code) byCode.set(p.code.toLowerCase().trim(), p);
+      const nameKey = `${normalizeText(p.name)}|${(p.category || '').toLowerCase().trim()}`;
+      byNameCat.set(nameKey, p);
+    });
+    return { programById: byId, programByCode: byCode, programByNameCat: byNameCat };
+  }, [programs]);
+
+  // Resolve a registration to its canonical program ID in O(1)
+  const resolveRegProgramId = useCallback((r: Registration): string => {
+    if (!r) return '';
+    const rProgId = (r.programId || '').toLowerCase().trim();
+    const rProgCode = ((r as any).programCode || '').toLowerCase().trim();
+
+    if (rProgId && programById.has(rProgId)) return programById.get(rProgId)!.id;
+    if (rProgId && programByCode.has(rProgId)) return programByCode.get(rProgId)!.id;
+    if (rProgCode && programByCode.has(rProgCode)) return programByCode.get(rProgCode)!.id;
+    if (rProgCode && programById.has(rProgCode)) return programById.get(rProgCode)!.id;
+
+    if (r.programName) {
+      const nameKey = `${normalizeText(r.programName)}|${(r.category || '').toLowerCase().trim()}`;
+      if (programByNameCat.has(nameKey)) {
+        return programByNameCat.get(nameKey)!.id;
+      }
+    }
+
+    return r.programId || '';
+  }, [programById, programByCode, programByNameCat]);
+
+  // Pre-calculated index of active registrations grouped by Program ID
+  const { programRegistrationsMap, programRegCounts } = useMemo(() => {
+    const regMap = new Map<string, Registration[]>();
+    const countMap = new Map<string, number>();
+
+    for (const r of baseRegistrations) {
+      if (!r || (r.status && r.status.toUpperCase() === 'WITHDRAWN')) continue;
+      const targetProgId = resolveRegProgramId(r);
+      if (!targetProgId) continue;
+
+      let list = regMap.get(targetProgId);
+      if (!list) {
+        list = [];
+        regMap.set(targetProgId, list);
+      }
+      list.push(r);
+    }
+
+    for (const [pId, list] of regMap.entries()) {
+      countMap.set(pId, list.length);
+    }
+
+    return { programRegistrationsMap: regMap, programRegCounts: countMap };
+  }, [baseRegistrations, resolveRegProgramId]);
+
   // Left Sidebar State
   const [programSearch, setProgramSearch] = useState('');
-  const debouncedProgramSearch = useDebounce(programSearch, 200);
+  const debouncedProgramSearch = useDebounce(programSearch, 150);
   const [progStatusFilter, setProgStatusFilter] = useState<'ALL' | 'OPEN' | 'CLOSED' | 'INDIVIDUAL' | 'GROUP'>('ALL');
   const [collectionFilter, setCollectionFilter] = useState<string>('ALL');
 
@@ -104,130 +364,33 @@ export const RegistrationMaster: React.FC = () => {
   const [selectedTeamFilter, setSelectedTeamFilter] = useState<string>('ALL');
   const [viewMode, setViewMode] = useState<'CARDS' | 'TABLE'>('CARDS');
   const [candidateSearch, setCandidateSearch] = useState('');
-  const debouncedCandidateSearch = useDebounce(candidateSearch, 200);
+  const debouncedCandidateSearch = useDebounce(candidateSearch, 150);
 
   // Register Modal State
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [registerStudentSearch, setRegisterStudentSearch] = useState('');
-  const debouncedRegisterStudentSearch = useDebounce(registerStudentSearch, 150);
   const [selectedStudentForReg, setSelectedStudentForReg] = useState<string>('');
   const [isSubmittingReg, setIsSubmittingReg] = useState(false);
-
-  // High performance student lookup maps
-  const { studentMapById, studentMapByChest } = useMemo(() => {
-    const byId = new Map<string, Student>();
-    const byChest = new Map<number, Student>();
-    students.forEach(s => {
-      byId.set(s.id, s);
-      if (s.chestNumber) byChest.set(Number(s.chestNumber), s);
-    });
-    return { studentMapById: byId, studentMapByChest: byChest };
-  }, [students]);
 
   // Group Details Modal State
   const [inspectedGroup, setInspectedGroup] = useState<Registration | null>(null);
 
   // Multi-selection state for table view
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [actionFeedback, setActionFeedback] = useState<{ success: boolean; msg: string } | null>(null);
 
   // Admin Clear Modals
   const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
-  const [isClearTeamModalOpen, setIsClearTeamModalOpen] = useState(false);
-  const [teamToClear, setTeamToClear] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
-
-  // Helper to normalize strings for robust comparison
-  const normalizeText = (text?: string): string => {
-    if (!text) return '';
-    return text.toLowerCase().replace(/[\s_\-()./]/g, '').trim();
-  };
-
-  // Helper to check if a registration is active (not withdrawn)
-  const isRegistrationActive = (r: Registration): boolean => {
-    if (!r) return false;
-    if (r.status && r.status.toUpperCase() === 'WITHDRAWN') return false;
-    return true;
-  };
-
-  // Helper to match team flexibly by ID, Code, or Name
-  const isTeamMatch = (team: Team, r: Registration): boolean => {
-    if (!team || !r) return false;
-    const tId = (team.id || '').toLowerCase().trim();
-    const tCode = (team.code || '').toLowerCase().trim();
-    const tName = (team.name || '').toLowerCase().trim();
-    const rTeamId = (r.teamId || '').toLowerCase().trim();
-    const rTeamName = (r.teamName || '').toLowerCase().trim();
-
-    if (rTeamId && (rTeamId === tId || rTeamId === tCode || rTeamId === tName)) return true;
-    if (rTeamName && (rTeamName === tName || rTeamName === tCode || rTeamName === tId)) return true;
-    if (tName && rTeamName && (tName.includes(rTeamName) || rTeamName.includes(tName))) return true;
-    if (tName && rTeamId && (tName.includes(rTeamId) || rTeamId.includes(tName))) return true;
-    return false;
-  };
-
-  // Helper to test if a registration matches a program
-  const isProgramRegMatch = (r: Registration, prog: Program): boolean => {
-    if (!r || !prog) return false;
-    const rProgId = (r.programId || '').toLowerCase().trim();
-    const pId = (prog.id || '').toLowerCase().trim();
-    const pCode = (prog.code || '').toLowerCase().trim();
-    const rProgName = (r.programName || '').toLowerCase().trim();
-    const pName = (prog.name || '').toLowerCase().trim();
-    const rProgCode = ((r as any).programCode || '').toLowerCase().trim();
-
-    // 1. Direct ID match or Code match
-    if (rProgId && (rProgId === pId || (pCode && rProgId === pCode))) return true;
-    if (rProgCode && (rProgCode === pCode || rProgCode === pId)) return true;
-
-    // 2. Lookup program from master list by registration's programId
-    const registeredProgram = programs.find(
-      p =>
-        (p.id && p.id.toLowerCase().trim() === rProgId) ||
-        (p.code && p.code.toLowerCase().trim() === rProgId)
-    );
-    if (registeredProgram) {
-      const regPId = (registeredProgram.id || '').toLowerCase().trim();
-      const regPCode = (registeredProgram.code || '').toLowerCase().trim();
-      const regPName = (registeredProgram.name || '').toLowerCase().trim();
-
-      if (regPId === pId) return true;
-      if (regPCode && pCode && regPCode === pCode) return true;
-      if (
-        normalizeText(regPName) === normalizeText(pName) &&
-        (!registeredProgram.category || !prog.category || isCategoryMatch(registeredProgram.category, prog.category, categoryConfigs))
-      ) {
-        return true;
-      }
-    }
-
-    // 3. Match by normalized Name + Category
-    if (normalizeText(rProgName) && normalizeText(pName) && normalizeText(rProgName) === normalizeText(pName)) {
-      if (!r.category || !prog.category || isCategoryMatch(r.category, prog.category, categoryConfigs)) {
-        return true;
-      }
-    }
-
-    return false;
-  };
-
-  // Helper to count registrations for a program
-  const getProgramRegCount = (prog: Program): number => {
-    return baseRegistrations.filter(r => isProgramRegMatch(r, prog) && isRegistrationActive(r)).length;
-  };
 
   // Filtered Programmes for Left Sidebar
   const filteredPrograms = useMemo(() => {
+    const q = debouncedProgramSearch.toLowerCase().trim();
+
     return availablePrograms.filter(p => {
       // 1. Search Query
-      const q = debouncedProgramSearch.toLowerCase().trim();
-      const matchQ =
-        !q ||
-        p.name.toLowerCase().includes(q) ||
-        p.code.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q);
-
-      if (!matchQ) return false;
+      if (q && !p.name.toLowerCase().includes(q) && !p.code.toLowerCase().includes(q) && !p.category.toLowerCase().includes(q)) {
+        return false;
+      }
 
       // 2. Status / Type Filter
       if (progStatusFilter === 'OPEN' && p.registrationOpen === false) return false;
@@ -258,30 +421,34 @@ export const RegistrationMaster: React.FC = () => {
     return filteredPrograms[0] || null;
   }, [filteredPrograms, selectedProgramId]);
 
+  // Fast selection callback with zero redundant renders
+  const handleSelectProgram = useCallback((progId: string) => {
+    setSelectedProgramId(progId);
+    setSelectedTeamFilter('ALL');
+    setCandidateSearch('');
+  }, []);
+
   // Next / Previous Navigation
   const currentProgramIndex = filteredPrograms.findIndex(p => p.id === activeProgram?.id);
-  const handlePrevProgram = () => {
+  const handlePrevProgram = useCallback(() => {
     if (currentProgramIndex > 0) {
-      setSelectedProgramId(filteredPrograms[currentProgramIndex - 1].id);
-      setSelectedTeamFilter('ALL');
-      setCandidateSearch('');
+      handleSelectProgram(filteredPrograms[currentProgramIndex - 1].id);
     }
-  };
-  const handleNextProgram = () => {
-    if (currentProgramIndex >= 0 && currentProgramIndex < filteredPrograms.length - 1) {
-      setSelectedProgramId(filteredPrograms[currentProgramIndex + 1].id);
-      setSelectedTeamFilter('ALL');
-      setCandidateSearch('');
-    }
-  };
+  }, [currentProgramIndex, filteredPrograms, handleSelectProgram]);
 
-  // Registrations for the active program
+  const handleNextProgram = useCallback(() => {
+    if (currentProgramIndex >= 0 && currentProgramIndex < filteredPrograms.length - 1) {
+      handleSelectProgram(filteredPrograms[currentProgramIndex + 1].id);
+    }
+  }, [currentProgramIndex, filteredPrograms, handleSelectProgram]);
+
+  // Registrations for the active program (O(1) map lookup)
   const activeProgramRegistrations = useMemo(() => {
     if (!activeProgram) return [];
-    return baseRegistrations.filter(r => isProgramRegMatch(r, activeProgram) && isRegistrationActive(r));
-  }, [baseRegistrations, activeProgram, programs, categoryConfigs]);
+    return programRegistrationsMap.get(activeProgram.id) || [];
+  }, [programRegistrationsMap, activeProgram?.id]);
 
-  // House/Team breakdown counts for active program
+  // House/Team breakdown counts for active program (calculated over ~6-9 items only)
   const teamRegCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     teams.forEach(t => {
@@ -289,28 +456,28 @@ export const RegistrationMaster: React.FC = () => {
     });
 
     activeProgramRegistrations.forEach(r => {
-      const matchedTeam = teams.find(t => isTeamMatch(t, r));
+      const matchedTeam = getRegistrationTeam(r);
       if (matchedTeam) {
         counts[matchedTeam.id] = (counts[matchedTeam.id] || 0) + 1;
       }
     });
 
     return counts;
-  }, [activeProgramRegistrations, teams]);
+  }, [activeProgramRegistrations, teams, getRegistrationTeam]);
 
   // Filtered registrations for Right Candidate Grid
   const filteredActiveRegistrations = useMemo(() => {
+    const q = debouncedCandidateSearch.toLowerCase().trim();
+
     return activeProgramRegistrations.filter(r => {
       // Team filter
       if (selectedTeamFilter !== 'ALL') {
-        const targetTeam = teams.find(t => t.id === selectedTeamFilter);
-        if (targetTeam && !isTeamMatch(targetTeam, r)) {
+        const matchedTeam = getRegistrationTeam(r);
+        if (!matchedTeam || matchedTeam.id !== selectedTeamFilter) {
           return false;
         }
       }
 
-      // Candidate search query
-      const q = debouncedCandidateSearch.toLowerCase().trim();
       if (!q) return true;
 
       // Lookup student for enriched search
@@ -334,7 +501,7 @@ export const RegistrationMaster: React.FC = () => {
         )
       );
     });
-  }, [activeProgramRegistrations, selectedTeamFilter, debouncedCandidateSearch, teams, studentMapById, studentMapByChest]);
+  }, [activeProgramRegistrations, selectedTeamFilter, debouncedCandidateSearch, getRegistrationTeam, studentMapById, studentMapByChest]);
 
   // Cards Pagination
   const [cardsPage, setCardsPage] = useState(1);
@@ -356,7 +523,7 @@ export const RegistrationMaster: React.FC = () => {
   const filteredMasterRegistrations = useMemo(() => {
     const q = debouncedCandidateSearch.toLowerCase().trim();
     return baseRegistrations
-      .filter(r => isRegistrationActive(r))
+      .filter(r => !r.status || r.status.toUpperCase() !== 'WITHDRAWN')
       .filter(r => {
         if (!q) return true;
         const student = r.studentId ? studentMapById.get(r.studentId) : (r.chestNumber ? studentMapByChest.get(Number(r.chestNumber)) : undefined);
@@ -383,25 +550,21 @@ export const RegistrationMaster: React.FC = () => {
     return filteredMasterRegistrations.slice(start, start + tablePageSize);
   }, [filteredMasterRegistrations, tablePage, tablePageSize]);
 
-  // Candidate avatar initials helper
-  const getInitials = (name?: string): string => {
-    if (!name) return 'CD';
-    const parts = name.trim().split(/\s+/);
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  };
-
   // Withdraw/Delete Registration Handler
-  const handleWithdraw = (regId: string, name: string) => {
+  const handleWithdraw = useCallback((regId: string, name: string) => {
     if (confirm(`Withdraw registration for "${name}"? This will delete it from database.`)) {
       const res = withdrawRegistration(regId, currentUser.name, currentUser.role);
       if (res.success) {
-        setSelectedIds(prev => prev.filter(id => id !== regId));
         setActionFeedback({ success: true, msg: `Registration for "${name}" removed.` });
         setTimeout(() => setActionFeedback(null), 3500);
       }
     }
-  };
+  }, [withdrawRegistration, currentUser.name, currentUser.role]);
+
+  // Inspect Group modal callback
+  const handleInspectGroup = useCallback((reg: Registration) => {
+    setInspectedGroup(reg);
+  }, []);
 
   // Export Spreadsheet
   const handleExportSpreadsheet = (format: 'csv' | 'xlsx' = 'xlsx') => {
@@ -419,33 +582,10 @@ export const RegistrationMaster: React.FC = () => {
     try {
       const res = clearAllRegistrations(currentUser.name, currentUser.role);
       if (res.success) {
-        setSelectedIds([]);
         setIsClearAllModalOpen(false);
         setActionFeedback({
           success: true,
           msg: `Successfully cleared all ${res.count} registrations!`
-        });
-        setTimeout(() => setActionFeedback(null), 4000);
-      }
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // Clear Team Registrations
-  const handleConfirmClearTeam = async () => {
-    const targetTeamId = teamToClear || (selectedTeamFilter !== 'ALL' ? selectedTeamFilter : '');
-    if (!targetTeamId) return;
-
-    setIsProcessing(true);
-    try {
-      const targetTeamName = teams.find(t => t.id === targetTeamId)?.name || 'House';
-      const res = clearRegistrationsByTeam(targetTeamId, currentUser.name, currentUser.role);
-      if (res.success) {
-        setIsClearTeamModalOpen(false);
-        setActionFeedback({
-          success: true,
-          msg: `Successfully cleared ${res.count} registrations for ${targetTeamName}!`
         });
         setTimeout(() => setActionFeedback(null), 4000);
       }
@@ -743,63 +883,22 @@ export const RegistrationMaster: React.FC = () => {
               </div>
             )}
 
-            {/* Programmes List */}
+            {/* Programmes List (Memoized fast items) */}
             <div className="space-y-2.5 max-h-[580px] overflow-y-auto pr-1">
               {filteredPrograms.length === 0 ? (
                 <div className="py-12 text-center text-slate-400 text-xs font-medium">
                   No programmes found matching filter.
                 </div>
               ) : (
-                filteredPrograms.map(prog => {
-                  const isSelected = activeProgram?.id === prog.id;
-                  const regCount = getProgramRegCount(prog);
-                  const isOpen = prog.registrationOpen !== false;
-
-                  return (
-                    <div
-                      key={prog.id}
-                      onClick={() => {
-                        setSelectedProgramId(prog.id);
-                        setSelectedTeamFilter('ALL');
-                        setCandidateSearch('');
-                      }}
-                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
-                        isSelected
-                          ? 'border-rose-300 bg-rose-50/40 shadow-xs'
-                          : 'border-slate-200 hover:border-slate-300 bg-white'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="space-y-1">
-                          <h4
-                            className={`text-sm font-black tracking-tight uppercase ${
-                              isSelected ? 'text-rose-600' : 'text-slate-900'
-                            }`}
-                          >
-                            {prog.name}
-                          </h4>
-                          <div className="text-[11px] font-mono text-slate-500 font-semibold uppercase">
-                            {prog.code} • {prog.programType} • {prog.category}
-                          </div>
-                          <div className="text-xs text-slate-600 font-medium pt-0.5">
-                            {regCount} registered
-                          </div>
-                        </div>
-
-                        {/* Open / Closed Badge */}
-                        <span
-                          className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full border shrink-0 ${
-                            isOpen
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : 'bg-slate-100 text-slate-600 border-slate-200'
-                          }`}
-                        >
-                          {isOpen ? 'Open' : 'Closed'}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })
+                filteredPrograms.map(prog => (
+                  <ProgramSidebarItem
+                    key={prog.id}
+                    prog={prog}
+                    isSelected={activeProgram?.id === prog.id}
+                    regCount={programRegCounts.get(prog.id) || 0}
+                    onSelect={handleSelectProgram}
+                  />
+                ))
               )}
             </div>
           </div>
@@ -935,84 +1034,18 @@ export const RegistrationMaster: React.FC = () => {
                   ) : (
                     paginatedActiveRegistrations.map(reg => {
                       const student = reg.studentId ? studentMapById.get(reg.studentId) : (reg.chestNumber ? studentMapByChest.get(Number(reg.chestNumber)) : undefined);
-                      const displayName = reg.studentName || student?.name || reg.groupName || 'Candidate';
-                      const initials = getInitials(displayName);
-                      const isGroup = reg.programType === 'GROUP' || reg.programType === 'GENERAL';
-                      const matchedTeam = teams.find(t => isTeamMatch(t, reg));
-                      const displayTeamName = reg.teamName || matchedTeam?.name || 'House';
-                      const displayTeamColor = reg.teamColor || matchedTeam?.color || '#ef4444';
-                      const displayChestNo = reg.chestNumber || student?.chestNumber;
-                      const displayCategory = reg.category || student?.category || activeProgram.category;
+                      const matchedTeam = getRegistrationTeam(reg);
 
                       return (
-                        <div
+                        <CandidateCard
                           key={reg.id}
-                          className="p-4 rounded-2xl border border-slate-200/90 bg-white hover:border-slate-300 transition-all shadow-2xs hover:shadow-xs space-y-3 relative group"
-                        >
-                          {/* Row 1: Avatar, Name, House, and Close/Delete '×' button */}
-                          <div className="flex items-start justify-between gap-2.5">
-                            <div className="flex items-center gap-3 min-w-0">
-                              {/* Avatar Circle */}
-                              <div className="w-9 h-9 rounded-full bg-rose-50 text-rose-600 font-black text-xs flex items-center justify-center shrink-0 border border-rose-100">
-                                {initials}
-                              </div>
-
-                              <div className="min-w-0">
-                                <h4 className="text-xs font-black text-slate-900 tracking-tight truncate uppercase">
-                                  {displayName}
-                                </h4>
-                                <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500 font-bold uppercase">
-                                  <span
-                                    className="w-2 h-2 rounded-full shrink-0"
-                                    style={{ backgroundColor: displayTeamColor }}
-                                  />
-                                  <span>{displayTeamName}</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Delete / Withdraw × Button */}
-                            <button
-                              type="button"
-                              onClick={() => handleWithdraw(reg.id, displayName)}
-                              className="text-slate-300 hover:text-rose-600 p-1 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
-                              title="Withdraw / Remove Registration"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-
-                          {/* Row 2: Chest # / Category & Substitution Allowed Tag */}
-                          <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] font-mono">
-                            <div className="flex items-center gap-3">
-                              {displayChestNo && (
-                                <span className="font-bold text-slate-800">
-                                  {displayChestNo}
-                                </span>
-                              )}
-                              <span className="text-slate-500 uppercase font-semibold">
-                                {displayCategory}
-                              </span>
-                            </div>
-
-                            <div className="flex items-center gap-1 text-[11px] text-rose-500 font-bold">
-                              {isGroup ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setInspectedGroup(reg)}
-                                  className="underline hover:text-rose-700 cursor-pointer"
-                                >
-                                  {reg.groupMembers?.length || 0} Members
-                                </button>
-                              ) : (
-                                <>
-                                  <ArrowRightLeft className="w-3 h-3 text-rose-400" />
-                                  <span>Substitution allowed</span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </div>
+                          reg={reg}
+                          activeCategory={activeProgram.category}
+                          student={student}
+                          matchedTeam={matchedTeam}
+                          onWithdraw={handleWithdraw}
+                          onInspectGroup={handleInspectGroup}
+                        />
                       );
                     })
                   )}
@@ -1083,7 +1116,7 @@ export const RegistrationMaster: React.FC = () => {
                   paginatedMasterRegistrations.map(reg => {
                     const student = reg.studentId ? studentMapById.get(reg.studentId) : (reg.chestNumber ? studentMapByChest.get(Number(reg.chestNumber)) : undefined);
                     const displayName = reg.studentName || student?.name || reg.groupName || 'Candidate';
-                    const matchedTeam = teams.find(t => isTeamMatch(t, reg));
+                    const matchedTeam = getRegistrationTeam(reg);
                     const displayTeamName = reg.teamName || matchedTeam?.name || 'House';
                     const displayTeamColor = reg.teamColor || matchedTeam?.color || '#ef4444';
                     const displayChestNo = reg.chestNumber || student?.chestNumber;

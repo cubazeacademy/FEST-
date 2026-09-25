@@ -291,6 +291,28 @@ export const IndividualRegistration: React.FC = () => {
     return deduplicated;
   }, [programs, selectedCategory, categoryConfigs, settings.enableArtsSection, settings.enableSportsSection]);
 
+  // Pre-indexed set of registered program keys for this team
+  const confirmedTeamProgKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of registrations) {
+      if (
+        r &&
+        isTeamRegistration(r) &&
+        r.programType === 'INDIVIDUAL' &&
+        r.status === 'CONFIRMED'
+      ) {
+        if (r.programId) set.add(r.programId.toLowerCase().trim());
+        if ((r as any).programCode) set.add(((r as any).programCode).toLowerCase().trim());
+        if (r.programName) {
+          const normName = r.programName.toLowerCase().replace(/[\s_\-()./]/g, '').trim();
+          const normCat = (r.category || '').toLowerCase().trim();
+          set.add(`${normName}|${normCat}`);
+        }
+      }
+    }
+    return set;
+  }, [registrations, isTeamRegistration]);
+
   // Filter Individual Programs for the left sidebar
   const categoryIndividualPrograms = useMemo(() => {
     return allCategoryIndividualPrograms.filter(p => {
@@ -307,21 +329,24 @@ export const IndividualRegistration: React.FC = () => {
       if (statusFilter === 'ARTS' && p.section !== 'ARTS') return false;
       if (statusFilter === 'SPORTS' && p.section !== 'SPORTS') return false;
 
-      // Registration Status Filter
-      const isRegistered = registrations.some(
-        r =>
-          isProgramRegistration(r, p) &&
-          isTeamRegistration(r) &&
-          r.programType === 'INDIVIDUAL' &&
-          r.status === 'CONFIRMED'
-      );
+      // Fast Registration Status Filter
+      const pId = (p.id || '').toLowerCase().trim();
+      const pCode = (p.code || '').toLowerCase().trim();
+      const normName = (p.name || '').toLowerCase().replace(/[\s_\-()./]/g, '').trim();
+      const normCat = (p.category || '').toLowerCase().trim();
+      const nameKey = `${normName}|${normCat}`;
+
+      const isRegistered =
+        (pId && confirmedTeamProgKeys.has(pId)) ||
+        (pCode && confirmedTeamProgKeys.has(pCode)) ||
+        confirmedTeamProgKeys.has(nameKey);
 
       if (statusFilter === 'ENTERED' && !isRegistered) return false;
       if (statusFilter === 'NOT_ENTERED' && isRegistered) return false;
 
       return true;
     });
-  }, [allCategoryIndividualPrograms, programSearch, statusFilter, registrations, isProgramRegistration, isTeamRegistration]);
+  }, [allCategoryIndividualPrograms, programSearch, statusFilter, confirmedTeamProgKeys]);
 
   // Active Selected Program ID
   const [selectedProgramId, setSelectedProgramId] = useState<string>(() => {
