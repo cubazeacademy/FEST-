@@ -848,6 +848,8 @@ export async function saveStudentsBatchDb(students: Student[]) {
 
 export async function deleteStudentDb(studentId: string) {
   try {
+    // Clean dependent registrations first
+    await supabase.from('registrations').delete().eq('student_id', studentId);
     const { error } = await supabase.from('students').delete().eq('id', studentId);
     if (error) throw error;
     return { success: true };
@@ -860,6 +862,8 @@ export async function deleteStudentDb(studentId: string) {
 export async function deleteStudentsBatchDb(studentIds: string[]) {
   try {
     if (studentIds.length === 0) return { success: true };
+    // Clean dependent registrations first
+    await supabase.from('registrations').delete().in('student_id', studentIds);
     const { error } = await supabase.from('students').delete().in('id', studentIds);
     if (error) throw error;
     return { success: true };
@@ -882,6 +886,8 @@ export async function saveTeamDb(team: Team) {
 
 export async function deleteTeamDb(teamId: string) {
   try {
+    await supabase.from('registrations').delete().eq('team_id', teamId);
+    await supabase.from('students').update({ team_id: null }).eq('team_id', teamId);
     const { error } = await supabase.from('teams').delete().eq('id', teamId);
     if (error) throw error;
     return { success: true };
@@ -1082,6 +1088,28 @@ export async function deleteCategoryConfigDb(configId: string) {
   try {
     const { error } = await supabase.from('category_configs').delete().eq('id', configId);
     if (error) throw error;
+
+    try {
+      const { data: stateDoc } = await supabase
+        .from('fest_state')
+        .select('data')
+        .eq('id', FEST_STATE_KEY)
+        .maybeSingle();
+
+      if (stateDoc?.data?.categoryConfigs) {
+        await supabase.from('fest_state').upsert({
+          id: FEST_STATE_KEY,
+          data: {
+            ...stateDoc.data,
+            categoryConfigs: stateDoc.data.categoryConfigs.filter((c: any) => c.id !== configId)
+          },
+          updated_at: new Date().toISOString()
+        });
+      }
+    } catch (docErr) {
+      console.warn('Failed to mirror category delete to fest_state:', docErr);
+    }
+
     return { success: true };
   } catch (err: any) {
     console.error('Failed to delete category config:', err);
@@ -1104,6 +1132,28 @@ export async function deleteClassMappingDb(mappingId: string) {
   try {
     const { error } = await supabase.from('class_mappings').delete().eq('id', mappingId);
     if (error) throw error;
+
+    try {
+      const { data: stateDoc } = await supabase
+        .from('fest_state')
+        .select('data')
+        .eq('id', FEST_STATE_KEY)
+        .maybeSingle();
+
+      if (stateDoc?.data?.classMappings) {
+        await supabase.from('fest_state').upsert({
+          id: FEST_STATE_KEY,
+          data: {
+            ...stateDoc.data,
+            classMappings: stateDoc.data.classMappings.filter((m: any) => m.id !== mappingId)
+          },
+          updated_at: new Date().toISOString()
+        });
+      }
+    } catch (docErr) {
+      console.warn('Failed to mirror class mapping delete to fest_state:', docErr);
+    }
+
     return { success: true };
   } catch (err: any) {
     console.error('Failed to delete class mapping:', err);

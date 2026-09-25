@@ -26,7 +26,8 @@ import {
   deleteClassMappingDb,
   saveScoringConfigsDb,
   saveAuditLogDb,
-  saveLeaderboardCacheDb
+  saveLeaderboardCacheDb,
+  saveCloudFestState
 } from '../lib/supabase';
 import {
   AuditLog,
@@ -210,6 +211,28 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     localStorage.setItem(STORAGE_PREFIX + 'positionConfigs', JSON.stringify(positionConfigs));
     localStorage.setItem(STORAGE_PREFIX + 'auditLogs', JSON.stringify(auditLogs));
   }, [settings, teams, students, categoryConfigs, classMappings, programs, registrations, results, scoringConfigs, gradeConfigs, positionConfigs, auditLogs]);
+
+  // Debounced auto-mirror to fest_state snapshot document so realtime and snapshot are always 100% updated
+  useEffect(() => {
+    if (!isInitialLoadDoneRef.current || isRemoteUpdatingRef.current) return;
+
+    const timer = setTimeout(() => {
+      saveCloudFestState({
+        settings,
+        teams,
+        students,
+        categoryConfigs,
+        classMappings,
+        programs,
+        registrations,
+        results,
+        scoringConfigs,
+        auditLogs: auditLogs.slice(0, 50)
+      }).catch(console.error);
+    }, 700);
+
+    return () => clearTimeout(timer);
+  }, [settings, teams, students, categoryConfigs, classMappings, programs, registrations, results, scoringConfigs, auditLogs]);
 
   // Initial Fetch from Supabase & Realtime Subscription
   useEffect(() => {
