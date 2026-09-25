@@ -22,10 +22,23 @@ export const RegistrationHistory: React.FC = () => {
       t.code?.toLowerCase() === currentUser.teamId?.toLowerCase()
   );
   const teamColor = myTeam?.color || '#ef4444';
+
+  const validTeamIdentifiers = new Set(
+    [
+      currentUser?.teamId,
+      myTeam?.id,
+      myTeam?.code,
+      myTeam?.name
+    ]
+      .filter(Boolean)
+      .map(s => String(s).toLowerCase().trim())
+  );
+
   const myRegistrations = registrations.filter(
     r =>
-      r.teamId === currentUser.teamId ||
-      (myTeam && r.teamId === myTeam.id)
+      validTeamIdentifiers.has((r.teamId || '').toLowerCase().trim()) ||
+      validTeamIdentifiers.has((r.teamName || '').toLowerCase().trim()) ||
+      Boolean(myTeam && (r.teamId === myTeam.id || (r.teamName && r.teamName.toLowerCase() === myTeam.name.toLowerCase())))
   );
 
   const [searchQuery, setSearchQuery] = useState('');

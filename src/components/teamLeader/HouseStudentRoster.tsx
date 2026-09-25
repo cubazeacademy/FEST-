@@ -70,30 +70,39 @@ export const HouseStudentRoster: React.FC<HouseStudentRosterProps> = ({
     );
   }, [teams, currentUser]);
 
+  const validTeamIdentifiers = useMemo(() => {
+    return new Set(
+      [
+        currentUser?.teamId,
+        myTeam?.id,
+        myTeam?.code,
+        myTeam?.name
+      ]
+        .filter(Boolean)
+        .map(s => String(s).toLowerCase().trim())
+    );
+  }, [currentUser?.teamId, myTeam]);
+
   // Filter students belonging only to this house
   const houseStudents = useMemo(() => {
-    if (!myTeam) return [];
+    if (!myTeam && !currentUser?.teamId) return [];
     return students.filter(
       s =>
-        s.teamId === myTeam.id ||
-        s.teamId?.toLowerCase() === myTeam.name?.toLowerCase() ||
-        s.teamId?.toLowerCase() === myTeam.code?.toLowerCase() ||
-        (currentUser.teamId && s.teamId === currentUser.teamId)
+        validTeamIdentifiers.has((s.teamId || '').toLowerCase().trim()) ||
+        (myTeam && (s.teamId === myTeam.id || s.teamId?.toLowerCase() === myTeam.name?.toLowerCase()))
     );
-  }, [students, myTeam, currentUser]);
+  }, [students, myTeam, validTeamIdentifiers]);
 
   // Filter registrations belonging to this house
   const houseRegistrations = useMemo(() => {
-    if (!myTeam) return [];
+    if (!myTeam && !currentUser?.teamId) return [];
     return registrations.filter(
       r =>
-        r.teamId === myTeam.id ||
-        r.teamId?.toLowerCase() === myTeam.name?.toLowerCase() ||
-        r.teamId?.toLowerCase() === myTeam.code?.toLowerCase() ||
-        r.teamName?.toLowerCase() === myTeam.name?.toLowerCase() ||
-        (currentUser.teamId && r.teamId === currentUser.teamId)
+        validTeamIdentifiers.has((r.teamId || '').toLowerCase().trim()) ||
+        validTeamIdentifiers.has((r.teamName || '').toLowerCase().trim()) ||
+        (myTeam && (r.teamId === myTeam.id || r.teamName?.toLowerCase() === myTeam.name?.toLowerCase()))
     );
-  }, [registrations, myTeam, currentUser]);
+  }, [registrations, myTeam, validTeamIdentifiers]);
 
   // State Filters
   const [searchQuery, setSearchQuery] = useState('');

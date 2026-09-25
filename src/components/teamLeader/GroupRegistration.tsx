@@ -208,6 +208,59 @@ export const GroupRegistration: React.FC = () => {
   const [programSearch, setProgramSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'NOT_ENTERED' | 'ENTERED' | 'ARTS' | 'SPORTS'>('ALL');
 
+  // Set of all valid team identifiers for current user/team
+  const validTeamIdentifiers = useMemo(() => {
+    return new Set(
+      [
+        currentUser?.teamId,
+        myTeam?.id,
+        myTeam?.code,
+        myTeam?.name
+      ]
+        .filter(Boolean)
+        .map(s => String(s).toLowerCase().trim())
+    );
+  }, [currentUser?.teamId, myTeam]);
+
+  // Helper to check if a registration belongs to this Team Leader's house
+  const isTeamRegistration = useMemo(() => {
+    return (r: Registration): boolean => {
+      if (!r) return false;
+      const rTeamId = (r.teamId || '').toLowerCase().trim();
+      const rTeamName = (r.teamName || '').toLowerCase().trim();
+      return (
+        validTeamIdentifiers.has(rTeamId) ||
+        validTeamIdentifiers.has(rTeamName) ||
+        Boolean(myTeam && (rTeamId === myTeam.id.toLowerCase() || rTeamName === myTeam.name.toLowerCase()))
+      );
+    };
+  }, [validTeamIdentifiers, myTeam]);
+
+  // Helper to check if a registration matches a specific Program
+  const isProgramRegistration = useMemo(() => {
+    return (r: Registration, prog: Program): boolean => {
+      if (!r || !prog) return false;
+      const rProgId = (r.programId || '').toLowerCase().trim();
+      const pId = (prog.id || '').toLowerCase().trim();
+      const pCode = (prog.code || '').toLowerCase().trim();
+      const rProgName = (r.programName || '').toLowerCase().trim();
+      const pName = (prog.name || '').toLowerCase().trim();
+
+      // Direct ID or Code match
+      if (rProgId && (rProgId === pId || rProgId === pCode)) return true;
+      if ((r as any).programCode && (((r as any).programCode).toLowerCase().trim() === pCode || ((r as any).programCode).toLowerCase().trim() === pId)) return true;
+
+      // Match by Name + Category
+      if (rProgName && pName && rProgName === pName) {
+        if (!r.category || !prog.category || prog.programType === 'GENERAL' || isCategoryMatch(r.category, prog.category, categoryConfigs)) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+  }, [categoryConfigs]);
+
   // All Group Programs in the selected category
   const allCategoryGroupPrograms = useMemo(() => {
     return programs.filter(p => {
@@ -215,9 +268,9 @@ export const GroupRegistration: React.FC = () => {
       if (!isGroup) return false;
       if (settings.enableArtsSection === false && p.section === 'ARTS') return false;
       if (settings.enableSportsSection === false && p.section === 'SPORTS') return false;
-      return p.programType === 'GENERAL' || p.category === selectedCategory;
+      return p.programType === 'GENERAL' || isCategoryMatch(p.category, selectedCategory, categoryConfigs);
     });
-  }, [programs, selectedCategory, settings.enableArtsSection, settings.enableSportsSection]);
+  }, [programs, selectedCategory, categoryConfigs, settings.enableArtsSection, settings.enableSportsSection]);
 
   // Filter Group Programs for the left sidebar
   const categoryGroupPrograms = useMemo(() => {
@@ -238,8 +291,8 @@ export const GroupRegistration: React.FC = () => {
       // Registration Status Filter
       const teamRegs = registrations.filter(
         r =>
-          r.programId === p.id &&
-          r.teamId === currentUser.teamId &&
+          isProgramRegistration(r, p) &&
+          isTeamRegistration(r) &&
           (r.programType === 'GROUP' || r.programType === 'GENERAL') &&
           r.status === 'CONFIRMED'
       );
@@ -249,7 +302,7 @@ export const GroupRegistration: React.FC = () => {
 
       return true;
     });
-  }, [allCategoryGroupPrograms, programSearch, statusFilter, registrations, currentUser.teamId]);
+  }, [allCategoryGroupPrograms, programSearch, statusFilter, registrations, isProgramRegistration, isTeamRegistration]);
 
   // Active Selected Program ID
   const [selectedProgramId, setSelectedProgramId] = useState<string>(() => {
@@ -261,7 +314,7 @@ export const GroupRegistration: React.FC = () => {
 
   // Ensure active program
   const activeProgram = useMemo(() => {
-    const found = categoryGroupPrograms.find(p => p.id === selectedProgramId);
+    const found = categoryGroupPrograms.find(p => p.id === selectedProgramId || p.code === selectedProgramId);
     if (found) return found;
     return categoryGroupPrograms[0] || null;
   }, [categoryGroupPrograms, selectedProgramId]);
@@ -291,12 +344,12 @@ export const GroupRegistration: React.FC = () => {
     if (!activeProgram || !currentUser.teamId) return [];
     return registrations.filter(
       r =>
-        r.programId === activeProgram.id &&
-        r.teamId === currentUser.teamId &&
+        isProgramRegistration(r, activeProgram) &&
+        isTeamRegistration(r) &&
         (r.programType === 'GROUP' || r.programType === 'GENERAL') &&
         r.status === 'CONFIRMED'
     );
-  }, [registrations, activeProgram, currentUser.teamId]);
+  }, [registrations, activeProgram, isProgramRegistration, isTeamRegistration]);
 
   const createdGroupsCount = registeredTeamGroups.length;
   const isMaxGroupsReached = createdGroupsCount >= maxGroupsAllowed;
@@ -364,10 +417,11 @@ export const GroupRegistration: React.FC = () => {
 
   // Helper to count registered groups for a program
   const getGroupRegisteredCount = (programId: string) => {
+    const prog = programs.find(p => p.id === programId || p.code === programId);
     return registrations.filter(
       r =>
-        r.programId === programId &&
-        (r.teamId === currentUser.teamId || (myTeam && r.teamId === myTeam.id)) &&
+        (prog ? isProgramRegistration(r, prog) : (r.programId === programId)) &&
+        isTeamRegistration(r) &&
         (r.programType === 'GROUP' || r.programType === 'GENERAL') &&
         r.status === 'CONFIRMED'
     ).length;
@@ -378,15 +432,17 @@ export const GroupRegistration: React.FC = () => {
     const totalCompetitions = allCategoryGroupPrograms.length;
 
     const enteredProgIds = new Set(
-      registrations
-        .filter(
-          r =>
-            (r.teamId === currentUser.teamId || (myTeam && r.teamId === myTeam.id)) &&
-            (isCategoryMatch(r.category, selectedCategory, categoryConfigs) || r.programType === 'GENERAL') &&
-            (r.programType === 'GROUP' || r.programType === 'GENERAL') &&
-            r.status === 'CONFIRMED'
+      allCategoryGroupPrograms
+        .filter(p =>
+          registrations.some(
+            r =>
+              isProgramRegistration(r, p) &&
+              isTeamRegistration(r) &&
+              (r.programType === 'GROUP' || r.programType === 'GENERAL') &&
+              r.status === 'CONFIRMED'
+          )
         )
-        .map(r => r.programId)
+        .map(p => p.id)
     );
 
     const enteredCompetitionsCount = enteredProgIds.size;
@@ -394,7 +450,7 @@ export const GroupRegistration: React.FC = () => {
 
     const totalGroupsCount = registrations.filter(
       r =>
-        (r.teamId === currentUser.teamId || (myTeam && r.teamId === myTeam.id)) &&
+        isTeamRegistration(r) &&
         (isCategoryMatch(r.category, selectedCategory, categoryConfigs) || r.programType === 'GENERAL') &&
         (r.programType === 'GROUP' || r.programType === 'GENERAL') &&
         r.status === 'CONFIRMED'
@@ -404,7 +460,7 @@ export const GroupRegistration: React.FC = () => {
     registrations
       .filter(
         r =>
-          (r.teamId === currentUser.teamId || (myTeam && r.teamId === myTeam.id)) &&
+          isTeamRegistration(r) &&
           (isCategoryMatch(r.category, selectedCategory, categoryConfigs) || r.programType === 'GENERAL') &&
           (r.programType === 'GROUP' || r.programType === 'GENERAL') &&
           r.status === 'CONFIRMED'
@@ -420,7 +476,7 @@ export const GroupRegistration: React.FC = () => {
       totalGroupsCount,
       totalSlottedMembers
     };
-  }, [allCategoryGroupPrograms, registrations, currentUser.teamId, myTeam, selectedCategory, categoryConfigs]);
+  }, [allCategoryGroupPrograms, registrations, isTeamRegistration, isProgramRegistration, selectedCategory, categoryConfigs]);
 
   // Filtered students for picker modal (New Group)
   const filteredPickerStudents = useMemo(() => {

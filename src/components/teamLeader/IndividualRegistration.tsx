@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useFestData } from '../../context/FestDataContext';
 import { useAuth } from '../../context/AuthContext';
-import { FestCategory } from '../../types';
+import { FestCategory, Program, Registration } from '../../types';
 import { Modal } from '../common/Modal';
 import {
   generateSampleIndividualRegCSV,
@@ -206,15 +206,68 @@ export const IndividualRegistration: React.FC = () => {
   const [programSearch, setProgramSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'NOT_ENTERED' | 'ENTERED' | 'ARTS' | 'SPORTS'>('ALL');
 
+  // Set of all valid team identifiers for current user/team
+  const validTeamIdentifiers = useMemo(() => {
+    return new Set(
+      [
+        currentUser?.teamId,
+        myTeam?.id,
+        myTeam?.code,
+        myTeam?.name
+      ]
+        .filter(Boolean)
+        .map(s => String(s).toLowerCase().trim())
+    );
+  }, [currentUser?.teamId, myTeam]);
+
+  // Helper to check if a registration belongs to this Team Leader's house
+  const isTeamRegistration = useMemo(() => {
+    return (r: Registration): boolean => {
+      if (!r) return false;
+      const rTeamId = (r.teamId || '').toLowerCase().trim();
+      const rTeamName = (r.teamName || '').toLowerCase().trim();
+      return (
+        validTeamIdentifiers.has(rTeamId) ||
+        validTeamIdentifiers.has(rTeamName) ||
+        Boolean(myTeam && (rTeamId === myTeam.id.toLowerCase() || rTeamName === myTeam.name.toLowerCase()))
+      );
+    };
+  }, [validTeamIdentifiers, myTeam]);
+
+  // Helper to check if a registration matches a specific Program
+  const isProgramRegistration = useMemo(() => {
+    return (r: Registration, prog: Program): boolean => {
+      if (!r || !prog) return false;
+      const rProgId = (r.programId || '').toLowerCase().trim();
+      const pId = (prog.id || '').toLowerCase().trim();
+      const pCode = (prog.code || '').toLowerCase().trim();
+      const rProgName = (r.programName || '').toLowerCase().trim();
+      const pName = (prog.name || '').toLowerCase().trim();
+
+      // Direct ID or Code match
+      if (rProgId && (rProgId === pId || rProgId === pCode)) return true;
+      if ((r as any).programCode && (((r as any).programCode).toLowerCase().trim() === pCode || ((r as any).programCode).toLowerCase().trim() === pId)) return true;
+
+      // Match by Name + Category
+      if (rProgName && pName && rProgName === pName) {
+        if (!r.category || !prog.category || isCategoryMatch(r.category, prog.category, categoryConfigs)) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+  }, [categoryConfigs]);
+
   // All Individual Programs in the selected category
   const allCategoryIndividualPrograms = useMemo(() => {
     return programs.filter(p => {
-      if (p.programType !== 'INDIVIDUAL' || p.category !== selectedCategory) return false;
+      if (p.programType !== 'INDIVIDUAL' || !isCategoryMatch(p.category, selectedCategory, categoryConfigs)) return false;
       if (settings.enableArtsSection === false && p.section === 'ARTS') return false;
       if (settings.enableSportsSection === false && p.section === 'SPORTS') return false;
       return true;
     });
-  }, [programs, selectedCategory, settings.enableArtsSection, settings.enableSportsSection]);
+  }, [programs, selectedCategory, categoryConfigs, settings.enableArtsSection, settings.enableSportsSection]);
 
   // Filter Individual Programs for the left sidebar
   const categoryIndividualPrograms = useMemo(() => {
@@ -235,8 +288,8 @@ export const IndividualRegistration: React.FC = () => {
       // Registration Status Filter
       const isRegistered = registrations.some(
         r =>
-          r.programId === p.id &&
-          r.teamId === currentUser.teamId &&
+          isProgramRegistration(r, p) &&
+          isTeamRegistration(r) &&
           r.programType === 'INDIVIDUAL' &&
           r.status === 'CONFIRMED'
       );
@@ -246,7 +299,7 @@ export const IndividualRegistration: React.FC = () => {
 
       return true;
     });
-  }, [allCategoryIndividualPrograms, programSearch, statusFilter, registrations, currentUser.teamId]);
+  }, [allCategoryIndividualPrograms, programSearch, statusFilter, registrations, isProgramRegistration, isTeamRegistration]);
 
   // Active Selected Program ID
   const [selectedProgramId, setSelectedProgramId] = useState<string>(() => {
@@ -258,7 +311,7 @@ export const IndividualRegistration: React.FC = () => {
 
   // Ensure an active program is selected when category changes
   const activeProgram = useMemo(() => {
-    const found = categoryIndividualPrograms.find(p => p.id === selectedProgramId);
+    const found = categoryIndividualPrograms.find(p => p.id === selectedProgramId || p.code === selectedProgramId);
     if (found) return found;
     return categoryIndividualPrograms[0] || null;
   }, [categoryIndividualPrograms, selectedProgramId]);
@@ -327,12 +380,12 @@ export const IndividualRegistration: React.FC = () => {
     if (!activeProgram) return [];
     return registrations.filter(
       r =>
-        r.programId === activeProgram.id &&
-        (r.teamId === currentUser.teamId || (myTeam && r.teamId === myTeam.id)) &&
+        isProgramRegistration(r, activeProgram) &&
+        isTeamRegistration(r) &&
         r.programType === 'INDIVIDUAL' &&
         r.status === 'CONFIRMED'
     );
-  }, [registrations, activeProgram, currentUser.teamId, myTeam]);
+  }, [registrations, activeProgram, isProgramRegistration, isTeamRegistration]);
 
   // Quota for active program for this house (Candidates Per Team)
   const allowedCandidatesPerTeam = activeProgram?.maxParticipants || 1;
@@ -341,10 +394,12 @@ export const IndividualRegistration: React.FC = () => {
   const isTeamQuotaFull = registeredTeamCandidates >= allowedCandidatesPerTeam;
 
   // Helper to count student's confirmed individual registrations
-  const getStudentIndividualCount = (studentId: string) => {
+  const getStudentIndividualCount = (studentId: string, studentChest?: number | string, studentAdm?: string) => {
     return registrations.filter(
       r =>
-        r.studentId === studentId &&
+        (r.studentId === studentId ||
+          (studentChest && r.chestNumber && Number(r.chestNumber) === Number(studentChest)) ||
+          (studentAdm && r.admissionNo && r.admissionNo.toLowerCase() === studentAdm.toLowerCase())) &&
         r.programType === 'INDIVIDUAL' &&
         r.status === 'CONFIRMED'
     ).length;
@@ -352,10 +407,11 @@ export const IndividualRegistration: React.FC = () => {
 
   // Helper to count total registrations for any program by this team
   const getProgramRegisteredCount = (programId: string) => {
+    const prog = programs.find(p => p.id === programId || p.code === programId);
     return registrations.filter(
       r =>
-        r.programId === programId &&
-        (r.teamId === currentUser.teamId || (myTeam && r.teamId === myTeam.id)) &&
+        (prog ? isProgramRegistration(r, prog) : (r.programId === programId)) &&
+        isTeamRegistration(r) &&
         r.programType === 'INDIVIDUAL' &&
         r.status === 'CONFIRMED'
     ).length;
@@ -366,15 +422,17 @@ export const IndividualRegistration: React.FC = () => {
     const totalEvents = allCategoryIndividualPrograms.length;
 
     const enteredProgIds = new Set(
-      registrations
-        .filter(
-          r =>
-            (r.teamId === currentUser.teamId || (myTeam && r.teamId === myTeam.id)) &&
-            isCategoryMatch(r.category, selectedCategory, categoryConfigs) &&
-            r.programType === 'INDIVIDUAL' &&
-            r.status === 'CONFIRMED'
+      allCategoryIndividualPrograms
+        .filter(p =>
+          registrations.some(
+            r =>
+              isProgramRegistration(r, p) &&
+              isTeamRegistration(r) &&
+              r.programType === 'INDIVIDUAL' &&
+              r.status === 'CONFIRMED'
+          )
         )
-        .map(r => r.programId)
+        .map(p => p.id)
     );
 
     const enteredEventsCount = enteredProgIds.size;
@@ -382,7 +440,7 @@ export const IndividualRegistration: React.FC = () => {
 
     const totalEntriesCount = registrations.filter(
       r =>
-        (r.teamId === currentUser.teamId || (myTeam && r.teamId === myTeam.id)) &&
+        isTeamRegistration(r) &&
         isCategoryMatch(r.category, selectedCategory, categoryConfigs) &&
         r.programType === 'INDIVIDUAL' &&
         r.status === 'CONFIRMED'
@@ -391,7 +449,7 @@ export const IndividualRegistration: React.FC = () => {
     const candidatesCount = eligibleTeamStudents.length;
 
     const participatingStudentsCount = eligibleTeamStudents.filter(
-      s => getStudentIndividualCount(s.id) > 0
+      s => getStudentIndividualCount(s.id, s.chestNumber, s.admissionNo) > 0
     ).length;
 
     return {
@@ -402,13 +460,18 @@ export const IndividualRegistration: React.FC = () => {
       candidatesCount,
       participatingStudentsCount
     };
-  }, [allCategoryIndividualPrograms, registrations, currentUser.teamId, myTeam, selectedCategory, categoryConfigs, eligibleTeamStudents]);
+  }, [allCategoryIndividualPrograms, registrations, isTeamRegistration, isProgramRegistration, selectedCategory, categoryConfigs, eligibleTeamStudents]);
 
   // Filtered candidate list for Right Panel (strictly from this Leader's House for selected category)
   const filteredCandidates = useMemo(() => {
     const q = candidateSearch.toLowerCase().trim();
     return eligibleTeamStudents.filter(s => {
-      const isReg = activeProgramRegistrations.some(r => r.studentId === s.id);
+      const isReg = activeProgramRegistrations.some(
+        r =>
+          r.studentId === s.id ||
+          (s.chestNumber && r.chestNumber && Number(r.chestNumber) === Number(s.chestNumber)) ||
+          (s.admissionNo && r.admissionNo && r.admissionNo.toLowerCase() === s.admissionNo.toLowerCase())
+      );
       if (candidateFilterStatus === 'REGISTERED' && !isReg) return false;
       if (candidateFilterStatus === 'ELIGIBLE' && isReg) return false;
 
@@ -1095,7 +1158,10 @@ export const IndividualRegistration: React.FC = () => {
                       ) : (
                         filteredCandidates.map(student => {
                           const regEntry = activeProgramRegistrations.find(
-                            r => r.studentId === student.id
+                            r =>
+                              r.studentId === student.id ||
+                              (student.chestNumber && r.chestNumber && Number(r.chestNumber) === Number(student.chestNumber)) ||
+                              (student.admissionNo && r.admissionNo && r.admissionNo.toLowerCase() === student.admissionNo.toLowerCase())
                           );
                           const isRegistered = !!regEntry;
                           const breakdown = getStudentParticipationBreakdown(student.id, registrations);
