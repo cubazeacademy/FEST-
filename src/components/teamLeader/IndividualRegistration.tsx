@@ -368,13 +368,12 @@ export const IndividualRegistration: React.FC = () => {
   const [candidateFilterStatus, setCandidateFilterStatus] = useState<'ALL' | 'REGISTERED' | 'ELIGIBLE'>('ALL');
   const [viewMode, setViewMode] = useState<'CARDS' | 'TABLE'>('CARDS');
 
-  // Select Program with Auto-Priority for Registered Candidates
+  // Select Program with immediate candidate view
   const selectProgram = (progId: string) => {
     setSelectedProgramId(progId);
     setCandidateSearch('');
     setFeedback(null);
-    const count = getProgramRegisteredCount(progId);
-    setCandidateFilterStatus(count > 0 ? 'REGISTERED' : 'ALL');
+    setCandidateFilterStatus('ALL');
   };
 
   // Next / Previous Program Navigation
@@ -1333,6 +1332,20 @@ export const IndividualRegistration: React.FC = () => {
                             No candidates from {myTeam?.name || 'your'} House were registered for this programme before registration closed.
                           </p>
                         </>
+                      ) : candidateFilterStatus === 'REGISTERED' && activeProgramRegistrations.length === 0 ? (
+                        <div className="space-y-3">
+                          <Users className="w-8 h-8 text-slate-300 mx-auto" />
+                          <p className="text-xs font-bold text-slate-700">
+                            No candidates from {myTeam?.name || 'your'} House registered for {activeProgram.name} yet.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setCandidateFilterStatus('ALL')}
+                            className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                          >
+                            View Eligible Candidates ({eligibleTeamStudents.length})
+                          </button>
+                        </div>
                       ) : (
                         <>
                           <Users className="w-8 h-8 text-slate-300 mx-auto mb-1" />

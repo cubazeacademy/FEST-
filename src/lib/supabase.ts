@@ -401,39 +401,85 @@ export function mapAuditLogFromDb(row: any): AuditLog {
 }
 
 // =========================================================================
-// FULL RELATIONAL DATABASE FETCH
+// FULL RELATIONAL DATABASE FETCH (PAGINATED TO BYPASS 1000-ROW REST LIMIT)
 // =========================================================================
+
+/**
+ * Automatically pages through Supabase in 1000-row chunks to retrieve ALL records
+ * even when the table exceeds PostgREST's default 1000-row max limit.
+ */
+export async function fetchAllRows<T = any>(
+  tableName: string,
+  orderBy: string = 'created_at',
+  ascending: boolean = true
+): Promise<T[]> {
+  const CHUNK_SIZE = 1000;
+  let all: T[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from(tableName)
+      .select('*')
+      .order(orderBy, { ascending })
+      .range(from, from + CHUNK_SIZE - 1);
+
+    if (error) {
+      console.error(`Error fetching paginated data from ${tableName}:`, error);
+      break;
+    }
+
+    if (!data || data.length === 0) {
+      break;
+    }
+
+    all = all.concat(data as T[]);
+
+    if (data.length < CHUNK_SIZE) {
+      break;
+    }
+
+    from += CHUNK_SIZE;
+  }
+
+  return all;
+}
 
 export async function fetchFullRelationalData() {
   try {
     const [
       settingsRes,
       teamsRes,
-      studentsRes,
+      studentsData,
       categoriesRes,
       mappingsRes,
-      programsRes,
-      registrationsRes,
-      resultsRes,
+      programsData,
+      registrationsData,
+      resultsData,
       scoringRes,
       logsRes,
       festStateRes
     ] = await Promise.all([
       supabase.from('fest_settings').select('*').eq('id', 'current_settings').maybeSingle(),
       supabase.from('teams').select('*').order('created_at', { ascending: true }),
-      supabase.from('students').select('*').order('created_at', { ascending: true }).limit(10000),
+      fetchAllRows('students', 'created_at', true),
       supabase.from('category_configs').select('*').order('created_at', { ascending: true }),
       supabase.from('class_mappings').select('*'),
-      supabase.from('programs').select('*').order('created_at', { ascending: true }).limit(10000),
-      supabase.from('registrations').select('*').order('timestamp', { ascending: false }).limit(10000),
-      supabase.from('results').select('*').order('created_at', { ascending: true }).limit(10000),
+      fetchAllRows('programs', 'created_at', true),
+      fetchAllRows('registrations', 'timestamp', false),
+      fetchAllRows('results', 'created_at', true),
       supabase.from('scoring_configs').select('*').eq('id', 'current_scoring').maybeSingle(),
-      supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(200),
+      supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(500),
       supabase.from('fest_state').select('data').eq('id', FEST_STATE_KEY).maybeSingle()
     ]);
 
     // Check if relational database has any data
-    const hasData = categoriesRes.data?.length || teamsRes.data?.length || studentsRes.data?.length || programsRes.data?.length || settingsRes.data;
+    const hasData = (categoriesRes.data && categoriesRes.data.length > 0) ||
+      (teamsRes.data && teamsRes.data.length > 0) ||
+      (studentsData && studentsData.length > 0) ||
+      (programsData && programsData.length > 0) ||
+      (registrationsData && registrationsData.length > 0) ||
+      settingsRes.data;
 
     if (!hasData) {
       // Fallback to fest_state snapshot if relational tables were not populated yet
@@ -468,12 +514,12 @@ export async function fetchFullRelationalData() {
     return {
       settings: settingsRes.data ? mapSettingsFromDb(settingsRes.data) : undefined,
       teams: teamsRes.data ? teamsRes.data.map(mapTeamFromDb) : [],
-      students: studentsRes.data ? studentsRes.data.map(mapStudentFromDb) : [],
+      students: studentsData ? studentsData.map(mapStudentFromDb) : [],
       categoryConfigs: mappedCategories.length > 0 ? mappedCategories : snapshotCategories,
       classMappings: mappingsRes.data ? mappingsRes.data.map(mapClassMappingFromDb) : [],
-      programs: programsRes.data ? programsRes.data.map(mapProgramFromDb) : [],
-      registrations: registrationsRes.data ? registrationsRes.data.map(mapRegistrationFromDb) : [],
-      results: resultsRes.data ? resultsRes.data.map(mapResultFromDb) : [],
+      programs: programsData ? programsData.map(mapProgramFromDb) : [],
+      registrations: registrationsData ? registrationsData.map(mapRegistrationFromDb) : [],
+      results: resultsData ? resultsData.map(mapResultFromDb) : [],
       scoringConfigs: scoringRes.data?.data || undefined,
       auditLogs: logsRes.data ? logsRes.data.map(mapAuditLogFromDb) : []
     };
