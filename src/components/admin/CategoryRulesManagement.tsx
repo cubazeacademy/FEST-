@@ -10,11 +10,8 @@ import {
   Save,
   CheckCircle2,
   AlertCircle,
-  Sparkles,
-  Info,
-  Layers,
-  ChevronRight,
-  RotateCcw
+  RotateCcw,
+  Sparkles
 } from 'lucide-react';
 
 export const CategoryRulesManagement: React.FC = () => {
@@ -25,7 +22,6 @@ export const CategoryRulesManagement: React.FC = () => {
   const [rulesState, setRulesState] = useState<{ [id: string]: Partial<CategoryConfig> }>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ categoryId: string; success: boolean; msg: string } | null>(null);
-  const [batchFeedback, setBatchFeedback] = useState<{ success: boolean; msg: string } | null>(null);
 
   // Register dirty state to prevent accidental loss on deployment update / page navigation
   useRegisterUnsavedChanges('category_rules', Object.keys(rulesState).length > 0);
@@ -89,7 +85,7 @@ export const CategoryRulesManagement: React.FC = () => {
         setFeedback({
           categoryId: config.id,
           success: true,
-          msg: `Rules for "${config.displayName}" saved to Supabase!`
+          msg: `Saved!`
         });
         // Clear local dirty state for this category
         setRulesState(prev => {
@@ -97,7 +93,7 @@ export const CategoryRulesManagement: React.FC = () => {
           delete next[config.id];
           return next;
         });
-        setTimeout(() => setFeedback(null), 3500);
+        setTimeout(() => setFeedback(null), 3000);
       } else {
         setFeedback({
           categoryId: config.id,
@@ -110,132 +106,81 @@ export const CategoryRulesManagement: React.FC = () => {
     }
   };
 
-  // Preset Applicator: Apply standard rules to all categories (e.g. Stage: 0-2, Non-Stage: 0-3, Sports: 0-2)
-  const handleApplyPresetToAll = (
-    minStage: number,
-    maxStage: number,
-    minNonStage: number,
-    maxNonStage: number,
-    minSports: number,
-    maxSports: number,
-    presetName: string
-  ) => {
-    if (!confirm(`Apply "${presetName}" rules preset to all ${categoryConfigs.length} categories?`)) return;
-
-    setBatchFeedback(null);
-    let successCount = 0;
-
-    categoryConfigs.forEach(cat => {
-      const updated: CategoryConfig = {
-        ...cat,
-        minStagePrograms: minStage,
-        maxStagePrograms: maxStage,
-        minNonStagePrograms: minNonStage,
-        maxNonStagePrograms: maxNonStage,
-        minSportsPrograms: minSports,
-        maxSportsPrograms: maxSports,
-        maxIndividualProgramsPerStudent: maxStage + maxNonStage + maxSports
-      };
-      const res = updateCategoryConfig(updated, undefined, currentUser.name, currentUser.role);
-      if (res.success) successCount++;
-    });
-
-    setRulesState({});
-    setBatchFeedback({
-      success: true,
-      msg: `Applied "${presetName}" preset to ${successCount} categories successfully!`
-    });
-    setTimeout(() => setBatchFeedback(null), 4000);
-  };
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs">
+      <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="p-2 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100">
-              <Sliders className="w-5 h-5" />
+            <span className="p-1.5 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100">
+              <Sliders className="w-4 h-4" />
             </span>
-            <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">
-              Festival Policy & Quotas
+            <span className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider">
+              Participation Quotas
             </span>
           </div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">
+          <h2 className="text-xl font-black text-slate-900 tracking-tight">
             Candidate Participation Rules
           </h2>
-          <p className="text-sm text-slate-500 font-normal mt-0.5">
-            Set individual program minimum and maximum participation quotas per candidate for <span className="font-semibold text-purple-700">Stage</span>, <span className="font-semibold text-blue-700">Non-Stage</span>, and <span className="font-semibold text-emerald-700">Sports</span> sections.
+          <p className="text-xs text-slate-500 font-medium mt-0.5">
+            Set individual program minimum and maximum quotas per candidate across Stage, Non-Stage, and Sports.
           </p>
-        </div>
-
-        {/* Global Presets */}
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => handleApplyPresetToAll(0, 2, 0, 3, 0, 2, 'Standard (Stage:2, Non-Stg:3, Sports:2)')}
-            className="px-3.5 py-2 rounded-2xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs border border-indigo-200 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-            Apply Standard Preset
-          </button>
-          <button
-            type="button"
-            onClick={() => handleApplyPresetToAll(0, 3, 0, 4, 0, 3, 'Liberal (Stage:3, Non-Stg:4, Sports:3)')}
-            className="px-3.5 py-2 rounded-2xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs border border-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            Liberal Preset
-          </button>
         </div>
       </div>
 
-      {/* Batch Feedback */}
-      {batchFeedback && (
-        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-bold flex items-center gap-2 animate-in fade-in">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-          <span>{batchFeedback.msg}</span>
-        </div>
-      )}
-
       {/* Categories Rules List */}
-      <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-3.5">
         {categoryConfigs.map(cat => {
           const draft = getConfigValue(cat);
           const isDirty = !!rulesState[cat.id];
           const itemFeedback = feedback?.categoryId === cat.id ? feedback : null;
 
+          const stageMax = draft.maxStagePrograms !== undefined && draft.maxStagePrograms !== null ? draft.maxStagePrograms : 2;
+          const nonStageMax = draft.maxNonStagePrograms !== undefined && draft.maxNonStagePrograms !== null ? draft.maxNonStagePrograms : 3;
+          const sportsMax = draft.maxSportsPrograms !== undefined && draft.maxSportsPrograms !== null ? draft.maxSportsPrograms : 2;
+          const totalMax = stageMax + nonStageMax + sportsMax;
+
           return (
             <div
               key={cat.id}
-              className={`p-6 rounded-3xl bg-white border transition-all ${
-                isDirty ? 'border-indigo-300 ring-2 ring-indigo-500/10 shadow-sm' : 'border-slate-200/80 shadow-xs'
+              className={`p-4 sm:p-5 rounded-2xl bg-white border transition-all duration-200 ${
+                isDirty
+                  ? 'border-indigo-400 ring-2 ring-indigo-500/10 shadow-sm'
+                  : 'border-slate-200/90 shadow-2xs hover:border-slate-300'
               }`}
             >
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              {/* Category Header Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-slate-100">
                 <div className="flex items-center gap-3">
                   <CategoryBadge category={cat.category} />
                   <div>
-                    <h3 className="text-lg font-bold text-slate-900">{cat.displayName}</h3>
-                    <p className="text-xs text-slate-500 font-medium">
-                      Assigned Classes:{' '}
-                      <span className="text-indigo-700 font-bold">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-bold text-slate-900 leading-none">{cat.displayName}</h3>
+                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-semibold">
+                        Max Total: <strong className="text-slate-900">{totalMax}</strong>
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1 font-medium">
+                      Classes:{' '}
+                      <span className="text-slate-700 font-semibold">
                         {cat.assignedClasses.length > 0 ? cat.assignedClasses.map(c => `Class ${c}`).join(', ') : 'None'}
                       </span>{' '}
-                      • Chest Range: <span className="font-mono font-bold">#{cat.chestNoStart} - #{cat.chestNoEnd}</span>
+                      • Chest: <span className="font-mono text-slate-700 font-semibold">#{cat.chestNoStart}–#{cat.chestNoEnd}</span>
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                {/* Actions */}
+                <div className="flex items-center gap-2 self-end sm:self-auto">
                   {itemFeedback && (
                     <span
-                      className={`text-xs font-bold px-3 py-1.5 rounded-xl border flex items-center gap-1.5 animate-in fade-in ${
+                      className={`text-xs font-bold px-2.5 py-1 rounded-xl border flex items-center gap-1 animate-in fade-in ${
                         itemFeedback.success
                           ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                           : 'bg-rose-50 text-rose-800 border-rose-200'
                       }`}
                     >
-                      {itemFeedback.success ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-rose-600" />}
+                      {itemFeedback.success ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-600" />}
                       {itemFeedback.msg}
                     </span>
                   )}
@@ -250,7 +195,7 @@ export const CategoryRulesManagement: React.FC = () => {
                           return next;
                         });
                       }}
-                      className="px-3 py-2 rounded-2xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 text-xs font-bold transition-colors cursor-pointer"
+                      className="px-2.5 py-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xs font-semibold transition-colors cursor-pointer"
                     >
                       Reset
                     </button>
@@ -260,35 +205,35 @@ export const CategoryRulesManagement: React.FC = () => {
                     type="button"
                     disabled={savingId === cat.id}
                     onClick={() => handleSaveCategoryRule(cat)}
-                    className="px-4 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed ${
+                      isDirty
+                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/20'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
                   >
-                    <Save className={`w-4 h-4 ${savingId === cat.id ? 'animate-spin' : ''}`} />
-                    {savingId === cat.id ? 'Saving...' : `Save ${cat.displayName} Rules`}
+                    <Save className={`w-3.5 h-3.5 ${savingId === cat.id ? 'animate-spin' : ''}`} />
+                    {savingId === cat.id ? 'Saving...' : 'Save Rules'}
                   </button>
                 </div>
               </div>
 
-              {/* 3 Section Rules Cards (Stage, Non-Stage, Sports) */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-5">
-                {/* 1. STAGE PROGRAMS */}
-                <div className="p-4 rounded-2xl bg-purple-50/50 border border-purple-200/80 shadow-xs space-y-3">
+              {/* 3 Inline Compact Rule Panels */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3.5">
+                {/* 1. STAGE */}
+                <div className="p-3 rounded-xl bg-purple-50/40 border border-purple-100/90 flex flex-col justify-between gap-2.5">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-purple-600 ring-4 ring-purple-100"></span>
-                      <h4 className="text-sm font-bold text-purple-950">Stage Programs</h4>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-purple-600"></span>
+                      <span className="text-xs font-bold text-purple-950">Stage Programs</span>
                     </div>
-                    <span className="text-[10px] font-bold text-purple-700 bg-purple-100/80 px-2 py-0.5 rounded-full border border-purple-200">
-                      Arts - Stage
+                    <span className="text-[10px] font-bold text-purple-700 bg-purple-100/60 px-2 py-0.5 rounded-md">
+                      Arts
                     </span>
                   </div>
 
-                  <p className="text-[11px] text-purple-800/80">
-                    Individual stage performances (e.g. Speech, Monoact, Song, Recitation).
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-[11px] font-bold text-purple-900 block mb-1">
+                      <label className="text-[10px] font-bold text-purple-900/70 block mb-0.5">
                         Min Stage
                       </label>
                       <input
@@ -297,11 +242,11 @@ export const CategoryRulesManagement: React.FC = () => {
                         max={20}
                         value={draft.minStagePrograms ?? 0}
                         onChange={e => handleRuleChange(cat.id, 'minStagePrograms', parseInt(e.target.value, 10) || 0)}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-purple-200 text-sm font-mono font-bold text-purple-950 focus:outline-none focus:border-purple-500 shadow-xs"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-purple-200 text-xs font-mono font-bold text-purple-950 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-400 shadow-2xs"
                       />
                     </div>
                     <div>
-                      <label className="text-[11px] font-bold text-purple-900 block mb-1">
+                      <label className="text-[10px] font-bold text-purple-900/70 block mb-0.5">
                         Max Stage *
                       </label>
                       <input
@@ -310,31 +255,27 @@ export const CategoryRulesManagement: React.FC = () => {
                         max={20}
                         value={draft.maxStagePrograms !== undefined && draft.maxStagePrograms !== null ? draft.maxStagePrograms : 2}
                         onChange={e => handleRuleChange(cat.id, 'maxStagePrograms', parseInt(e.target.value, 10) || 0)}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-purple-200 text-sm font-mono font-bold text-purple-950 focus:outline-none focus:border-purple-500 shadow-xs"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-purple-200 text-xs font-mono font-bold text-purple-950 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-400 shadow-2xs"
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* 2. NON-STAGE PROGRAMS */}
-                <div className="p-4 rounded-2xl bg-blue-50/50 border border-blue-200/80 shadow-xs space-y-3">
+                {/* 2. NON-STAGE */}
+                <div className="p-3 rounded-xl bg-blue-50/40 border border-blue-100/90 flex flex-col justify-between gap-2.5">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-blue-600 ring-4 ring-blue-100"></span>
-                      <h4 className="text-sm font-bold text-blue-950">Non-Stage Programs</h4>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                      <span className="text-xs font-bold text-blue-950">Non-Stage Programs</span>
                     </div>
-                    <span className="text-[10px] font-bold text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded-full border border-blue-200">
-                      Arts - Non Stage
+                    <span className="text-[10px] font-bold text-blue-700 bg-blue-100/60 px-2 py-0.5 rounded-md">
+                      Arts
                     </span>
                   </div>
 
-                  <p className="text-[11px] text-blue-800/80">
-                    Off-stage creative items (e.g. Essay Writing, Drawing, Pencil Art, Quiz).
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-[11px] font-bold text-blue-900 block mb-1">
+                      <label className="text-[10px] font-bold text-blue-900/70 block mb-0.5">
                         Min Non-Stage
                       </label>
                       <input
@@ -343,11 +284,11 @@ export const CategoryRulesManagement: React.FC = () => {
                         max={20}
                         value={draft.minNonStagePrograms ?? 0}
                         onChange={e => handleRuleChange(cat.id, 'minNonStagePrograms', parseInt(e.target.value, 10) || 0)}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-blue-200 text-sm font-mono font-bold text-blue-950 focus:outline-none focus:border-blue-500 shadow-xs"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-blue-200 text-xs font-mono font-bold text-blue-950 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 shadow-2xs"
                       />
                     </div>
                     <div>
-                      <label className="text-[11px] font-bold text-blue-900 block mb-1">
+                      <label className="text-[10px] font-bold text-blue-900/70 block mb-0.5">
                         Max Non-Stage *
                       </label>
                       <input
@@ -356,31 +297,27 @@ export const CategoryRulesManagement: React.FC = () => {
                         max={20}
                         value={draft.maxNonStagePrograms !== undefined && draft.maxNonStagePrograms !== null ? draft.maxNonStagePrograms : 3}
                         onChange={e => handleRuleChange(cat.id, 'maxNonStagePrograms', parseInt(e.target.value, 10) || 0)}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-blue-200 text-sm font-mono font-bold text-blue-950 focus:outline-none focus:border-blue-500 shadow-xs"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-blue-200 text-xs font-mono font-bold text-blue-950 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 shadow-2xs"
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* 3. SPORTS PROGRAMS */}
-                <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-200/80 shadow-xs space-y-3">
+                {/* 3. SPORTS */}
+                <div className="p-3 rounded-xl bg-emerald-50/40 border border-emerald-100/90 flex flex-col justify-between gap-2.5">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 ring-4 ring-emerald-100"></span>
-                      <h4 className="text-sm font-bold text-emerald-950">Sports Programs</h4>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                      <span className="text-xs font-bold text-emerald-950">Sports Programs</span>
                     </div>
-                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-200">
-                      Sports / Athletics
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/60 px-2 py-0.5 rounded-md">
+                      Sports
                     </span>
                   </div>
 
-                  <p className="text-[11px] text-emerald-800/80">
-                    Athletics & sports competitions (e.g. 100m, 200m, Long Jump, Badminton).
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-[11px] font-bold text-emerald-900 block mb-1">
+                      <label className="text-[10px] font-bold text-emerald-900/70 block mb-0.5">
                         Min Sports
                       </label>
                       <input
@@ -389,11 +326,11 @@ export const CategoryRulesManagement: React.FC = () => {
                         max={20}
                         value={draft.minSportsPrograms ?? 0}
                         onChange={e => handleRuleChange(cat.id, 'minSportsPrograms', parseInt(e.target.value, 10) || 0)}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-emerald-200 text-sm font-mono font-bold text-emerald-950 focus:outline-none focus:border-purple-500 shadow-xs"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-emerald-200 text-xs font-mono font-bold text-emerald-950 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-400 shadow-2xs"
                       />
                     </div>
                     <div>
-                      <label className="text-[11px] font-bold text-emerald-900 block mb-1">
+                      <label className="text-[10px] font-bold text-emerald-900/70 block mb-0.5">
                         Max Sports *
                       </label>
                       <input
@@ -402,7 +339,7 @@ export const CategoryRulesManagement: React.FC = () => {
                         max={20}
                         value={draft.maxSportsPrograms !== undefined && draft.maxSportsPrograms !== null ? draft.maxSportsPrograms : 2}
                         onChange={e => handleRuleChange(cat.id, 'maxSportsPrograms', parseInt(e.target.value, 10) || 0)}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-emerald-200 text-sm font-mono font-bold text-emerald-950 focus:outline-none focus:border-purple-500 shadow-xs"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-emerald-200 text-xs font-mono font-bold text-emerald-950 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-400 shadow-2xs"
                       />
                     </div>
                   </div>
