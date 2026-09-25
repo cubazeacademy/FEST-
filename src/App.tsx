@@ -45,6 +45,7 @@ import { PublicResultsHub } from './components/public/PublicResultsHub';
 import { LoginPortal } from './views/LoginPortal';
 
 import { Menu, PanelLeftOpen } from 'lucide-react';
+import { DeploymentUpdateNotification } from './components/common/DeploymentUpdateNotification';
 
 export function App() {
   const { currentUser, isSuperAdmin, isTeamLeader, isController, isPublic, isAuthenticated } = useAuth();
@@ -323,6 +324,9 @@ export function App() {
           </div>
         </div>
       )}
+
+      {/* Production Deployment Live Update Watcher */}
+      <DeploymentUpdateNotification />
     </div>
   );
 }

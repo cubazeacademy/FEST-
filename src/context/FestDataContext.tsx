@@ -356,10 +356,24 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (!isMounted) return;
+        if (status === 'SUBSCRIBED') {
+          setCloudStatus('connected');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          setCloudStatus('offline');
+        }
+      });
+
+    // Auto-resync when browser comes back online
+    const handleOnline = () => {
+      loadCloudState();
+    };
+    window.addEventListener('online', handleOnline);
 
     return () => {
       isMounted = false;
+      window.removeEventListener('online', handleOnline);
       supabase.removeChannel(channel);
     };
   }, []);

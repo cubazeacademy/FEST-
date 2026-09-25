@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useFestData } from '../../context/FestDataContext';
 import { useAuth } from '../../context/AuthContext';
+import { useRegisterUnsavedChanges } from '../../context/UnsavedChangesContext';
 import {
   Settings,
   Download,
@@ -29,6 +30,8 @@ export const SettingsAuditLogs: React.FC = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<{ success: boolean; msg: string } | null>(null);
+
+  useRegisterUnsavedChanges('settings_form', isDirty);
 
   const [settingsForm, setSettingsForm] = useState({
     festName: settings.festName,

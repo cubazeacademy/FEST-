@@ -3,6 +3,7 @@ import { useFestData } from '../../context/FestDataContext';
 import { useAuth } from '../../context/AuthContext';
 import { CategoryConfig, FestCategory } from '../../types';
 import { CategoryBadge } from '../common/Badge';
+import { useRegisterUnsavedChanges } from '../../context/UnsavedChangesContext';
 import {
   Sliders,
   ShieldCheck,
@@ -25,6 +26,9 @@ export const CategoryRulesManagement: React.FC = () => {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ categoryId: string; success: boolean; msg: string } | null>(null);
   const [batchFeedback, setBatchFeedback] = useState<{ success: boolean; msg: string } | null>(null);
+
+  // Register dirty state to prevent accidental loss on deployment update / page navigation
+  useRegisterUnsavedChanges('category_rules', Object.keys(rulesState).length > 0);
 
   // Helper to get active draft or saved config
   const getConfigValue = (config: CategoryConfig): CategoryConfig => {
