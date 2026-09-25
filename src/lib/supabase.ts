@@ -42,14 +42,14 @@ export function mapCategoryConfigToDb(c: CategoryConfig) {
     display_name: c.displayName,
     section_scope: c.sectionScope || 'ALL',
     assigned_classes: c.assignedClasses || [],
-    max_individual_programs_per_student: c.maxIndividualProgramsPerStudent || 4,
-    min_individual_programs_per_student: c.minIndividualProgramsPerStudent ?? 0,
-    min_stage_programs: c.minStagePrograms ?? 0,
-    max_stage_programs: c.maxStagePrograms !== undefined ? c.maxStagePrograms : (c.maxIndividualProgramsPerStudent || 4),
-    min_non_stage_programs: c.minNonStagePrograms ?? 0,
-    max_non_stage_programs: c.maxNonStagePrograms !== undefined ? c.maxNonStagePrograms : (c.maxIndividualProgramsPerStudent || 4),
-    min_sports_programs: c.minSportsPrograms ?? 0,
-    max_sports_programs: c.maxSportsPrograms !== undefined ? c.maxSportsPrograms : (c.maxIndividualProgramsPerStudent || 4),
+    max_individual_programs_per_student: c.maxIndividualProgramsPerStudent != null ? Number(c.maxIndividualProgramsPerStudent) : 5,
+    min_individual_programs_per_student: c.minIndividualProgramsPerStudent != null ? Number(c.minIndividualProgramsPerStudent) : 0,
+    min_stage_programs: c.minStagePrograms != null ? Number(c.minStagePrograms) : 0,
+    max_stage_programs: c.maxStagePrograms != null ? Number(c.maxStagePrograms) : 2,
+    min_non_stage_programs: c.minNonStagePrograms != null ? Number(c.minNonStagePrograms) : 0,
+    max_non_stage_programs: c.maxNonStagePrograms != null ? Number(c.maxNonStagePrograms) : 3,
+    min_sports_programs: c.minSportsPrograms != null ? Number(c.minSportsPrograms) : 0,
+    max_sports_programs: c.maxSportsPrograms != null ? Number(c.maxSportsPrograms) : 2,
     chest_no_start: c.chestNoStart,
     chest_no_end: c.chestNoEnd,
     status: c.status || 'ACTIVE'
@@ -61,19 +61,19 @@ export function mapCategoryConfigFromDb(row: any): CategoryConfig {
     id: row.id,
     category: row.category,
     displayName: row.display_name,
-    sectionScope: row.section_scope,
+    sectionScope: row.section_scope || 'ALL',
     assignedClasses: row.assigned_classes || [],
-    maxIndividualProgramsPerStudent: row.max_individual_programs_per_student ?? 5,
-    minIndividualProgramsPerStudent: row.min_individual_programs_per_student ?? 0,
-    minStagePrograms: row.min_stage_programs ?? 0,
-    maxStagePrograms: row.max_stage_programs !== undefined ? row.max_stage_programs : (row.max_individual_programs_per_student ?? 5),
-    minNonStagePrograms: row.min_non_stage_programs ?? 0,
-    maxNonStagePrograms: row.max_non_stage_programs !== undefined ? row.max_non_stage_programs : (row.max_individual_programs_per_student ?? 5),
-    minSportsPrograms: row.min_sports_programs ?? 0,
-    maxSportsPrograms: row.max_sports_programs !== undefined ? row.max_sports_programs : (row.max_individual_programs_per_student ?? 5),
-    chestNoStart: row.chest_no_start,
-    chestNoEnd: row.chest_no_end,
-    status: row.status
+    maxIndividualProgramsPerStudent: row.max_individual_programs_per_student != null ? Number(row.max_individual_programs_per_student) : 5,
+    minIndividualProgramsPerStudent: row.min_individual_programs_per_student != null ? Number(row.min_individual_programs_per_student) : 0,
+    minStagePrograms: row.min_stage_programs != null ? Number(row.min_stage_programs) : 0,
+    maxStagePrograms: row.max_stage_programs != null ? Number(row.max_stage_programs) : 2,
+    minNonStagePrograms: row.min_non_stage_programs != null ? Number(row.min_non_stage_programs) : 0,
+    maxNonStagePrograms: row.max_non_stage_programs != null ? Number(row.max_non_stage_programs) : 3,
+    minSportsPrograms: row.min_sports_programs != null ? Number(row.min_sports_programs) : 0,
+    maxSportsPrograms: row.max_sports_programs != null ? Number(row.max_sports_programs) : 2,
+    chestNoStart: row.chest_no_start != null ? Number(row.chest_no_start) : 101,
+    chestNoEnd: row.chest_no_end != null ? Number(row.chest_no_end) : 199,
+    status: row.status || 'ACTIVE'
   };
 }
 
@@ -416,7 +416,8 @@ export async function fetchFullRelationalData() {
       registrationsRes,
       resultsRes,
       scoringRes,
-      logsRes
+      logsRes,
+      festStateRes
     ] = await Promise.all([
       supabase.from('fest_settings').select('*').eq('id', 'current_settings').maybeSingle(),
       supabase.from('teams').select('*').order('created_at', { ascending: true }),
@@ -427,7 +428,8 @@ export async function fetchFullRelationalData() {
       supabase.from('registrations').select('*').order('timestamp', { ascending: false }),
       supabase.from('results').select('*').order('created_at', { ascending: true }),
       supabase.from('scoring_configs').select('*').eq('id', 'current_scoring').maybeSingle(),
-      supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(100)
+      supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(100),
+      supabase.from('fest_state').select('data').eq('id', FEST_STATE_KEY).maybeSingle()
     ]);
 
     // Check if relational database has any data
@@ -439,11 +441,31 @@ export async function fetchFullRelationalData() {
       return snapshot;
     }
 
+    // Merge categoryConfigs from relational table with any snapshot rules in fest_state
+    const snapshotCategories: CategoryConfig[] = festStateRes.data?.data?.categoryConfigs || [];
+    const mappedCategories = (categoriesRes.data ? categoriesRes.data.map(mapCategoryConfigFromDb) : []).map(cat => {
+      const snap = snapshotCategories.find(s => s.id === cat.id || s.category === cat.category);
+      if (snap) {
+        return {
+          ...cat,
+          minStagePrograms: cat.minStagePrograms !== undefined && cat.minStagePrograms !== null ? cat.minStagePrograms : (snap.minStagePrograms ?? 0),
+          maxStagePrograms: cat.maxStagePrograms !== undefined && cat.maxStagePrograms !== null ? cat.maxStagePrograms : (snap.maxStagePrograms ?? 2),
+          minNonStagePrograms: cat.minNonStagePrograms !== undefined && cat.minNonStagePrograms !== null ? cat.minNonStagePrograms : (snap.minNonStagePrograms ?? 0),
+          maxNonStagePrograms: cat.maxNonStagePrograms !== undefined && cat.maxNonStagePrograms !== null ? cat.maxNonStagePrograms : (snap.maxNonStagePrograms ?? 3),
+          minSportsPrograms: cat.minSportsPrograms !== undefined && cat.minSportsPrograms !== null ? cat.minSportsPrograms : (snap.minSportsPrograms ?? 0),
+          maxSportsPrograms: cat.maxSportsPrograms !== undefined && cat.maxSportsPrograms !== null ? cat.maxSportsPrograms : (snap.maxSportsPrograms ?? 2),
+          minIndividualProgramsPerStudent: cat.minIndividualProgramsPerStudent ?? snap.minIndividualProgramsPerStudent ?? 0,
+          maxIndividualProgramsPerStudent: cat.maxIndividualProgramsPerStudent || snap.maxIndividualProgramsPerStudent || 5
+        };
+      }
+      return cat;
+    });
+
     return {
       settings: settingsRes.data ? mapSettingsFromDb(settingsRes.data) : undefined,
       teams: teamsRes.data ? teamsRes.data.map(mapTeamFromDb) : [],
       students: studentsRes.data ? studentsRes.data.map(mapStudentFromDb) : [],
-      categoryConfigs: categoriesRes.data ? categoriesRes.data.map(mapCategoryConfigFromDb) : [],
+      categoryConfigs: mappedCategories.length > 0 ? mappedCategories : snapshotCategories,
       classMappings: mappingsRes.data ? mappingsRes.data.map(mapClassMappingFromDb) : [],
       programs: programsRes.data ? programsRes.data.map(mapProgramFromDb) : [],
       registrations: registrationsRes.data ? registrationsRes.data.map(mapRegistrationFromDb) : [],
@@ -1004,7 +1026,7 @@ export async function saveSettingsDb(settings: FestSettings) {
   }
 }
 
-export async function saveCategoryConfigDb(config: CategoryConfig) {
+export async function saveCategoryConfigDb(config: CategoryConfig, allConfigs?: CategoryConfig[]) {
   try {
     const fullPayload = mapCategoryConfigToDb(config);
     const { error } = await supabase.from('category_configs').upsert(fullPayload);
@@ -1016,14 +1038,43 @@ export async function saveCategoryConfigDb(config: CategoryConfig) {
         display_name: config.displayName,
         section_scope: config.sectionScope || 'ALL',
         assigned_classes: config.assignedClasses || [],
-        max_individual_programs_per_student: config.maxIndividualProgramsPerStudent || 4,
+        max_individual_programs_per_student: config.maxIndividualProgramsPerStudent || 5,
         chest_no_start: config.chestNoStart,
         chest_no_end: config.chestNoEnd,
         status: config.status || 'ACTIVE'
       };
       const { error: fbErr } = await supabase.from('category_configs').upsert(fallbackPayload);
-      if (fbErr) throw fbErr;
+      if (fbErr) console.warn('Fallback upsert returned warning:', fbErr.message);
     }
+
+    // Always mirror to fest_state snapshot so quota limits persist seamlessly across refreshes
+    try {
+      const { data: stateDoc } = await supabase
+        .from('fest_state')
+        .select('data')
+        .eq('id', FEST_STATE_KEY)
+        .maybeSingle();
+
+      if (stateDoc?.data) {
+        const currentList: CategoryConfig[] = stateDoc.data.categoryConfigs || [];
+        const updatedList = allConfigs || (
+          currentList.some(c => c.id === config.id)
+            ? currentList.map(c => c.id === config.id ? config : c)
+            : [...currentList, config]
+        );
+        await supabase.from('fest_state').upsert({
+          id: FEST_STATE_KEY,
+          data: {
+            ...stateDoc.data,
+            categoryConfigs: updatedList
+          },
+          updated_at: new Date().toISOString()
+        });
+      }
+    } catch (docErr) {
+      console.warn('Failed to mirror category config to fest_state:', docErr);
+    }
+
     return { success: true };
   } catch (err: any) {
     console.error('Failed to save category config:', err);

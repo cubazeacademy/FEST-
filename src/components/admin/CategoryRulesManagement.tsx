@@ -22,6 +22,7 @@ export const CategoryRulesManagement: React.FC = () => {
 
   // Local draft state for editing rules per category
   const [rulesState, setRulesState] = useState<{ [id: string]: Partial<CategoryConfig> }>({});
+  const [savingId, setSavingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ categoryId: string; success: boolean; msg: string } | null>(null);
   const [batchFeedback, setBatchFeedback] = useState<{ success: boolean; msg: string } | null>(null);
 
@@ -48,43 +49,60 @@ export const CategoryRulesManagement: React.FC = () => {
   };
 
   // Save specific category rule
-  const handleSaveCategoryRule = (config: CategoryConfig) => {
+  const handleSaveCategoryRule = async (config: CategoryConfig) => {
     const updated = getConfigValue(config);
     setFeedback(null);
+    setSavingId(config.id);
 
-    const res = updateCategoryConfig(
-      {
+    try {
+      const stageMin = updated.minStagePrograms ?? 0;
+      const stageMax = updated.maxStagePrograms !== undefined && updated.maxStagePrograms !== null ? updated.maxStagePrograms : 2;
+      const nonStageMin = updated.minNonStagePrograms ?? 0;
+      const nonStageMax = updated.maxNonStagePrograms !== undefined && updated.maxNonStagePrograms !== null ? updated.maxNonStagePrograms : 3;
+      const sportsMin = updated.minSportsPrograms ?? 0;
+      const sportsMax = updated.maxSportsPrograms !== undefined && updated.maxSportsPrograms !== null ? updated.maxSportsPrograms : 2;
+
+      const fullConfig: CategoryConfig = {
         ...updated,
-        // sync maxIndividualProgramsPerStudent as maximum sum or fallback
-        maxIndividualProgramsPerStudent: Math.max(
-          (updated.maxStagePrograms ?? 2) + (updated.maxNonStagePrograms ?? 3) + (updated.maxSportsPrograms ?? 2),
-          updated.maxIndividualProgramsPerStudent || 5
-        )
-      },
-      undefined,
-      currentUser.name,
-      currentUser.role
-    );
+        minStagePrograms: stageMin,
+        maxStagePrograms: stageMax,
+        minNonStagePrograms: nonStageMin,
+        maxNonStagePrograms: nonStageMax,
+        minSportsPrograms: sportsMin,
+        maxSportsPrograms: sportsMax,
+        minIndividualProgramsPerStudent: Math.max(0, stageMin + nonStageMin + sportsMin),
+        maxIndividualProgramsPerStudent: Math.max(1, stageMax + nonStageMax + sportsMax)
+      };
 
-    if (res.success) {
-      setFeedback({
-        categoryId: config.id,
-        success: true,
-        msg: `Rules for "${config.displayName}" updated successfully!`
-      });
-      // Clear local dirty state for this category
-      setRulesState(prev => {
-        const next = { ...prev };
-        delete next[config.id];
-        return next;
-      });
-      setTimeout(() => setFeedback(null), 3500);
-    } else {
-      setFeedback({
-        categoryId: config.id,
-        success: false,
-        msg: res.error || 'Failed to update rules.'
-      });
+      const res = updateCategoryConfig(
+        fullConfig,
+        undefined,
+        currentUser.name,
+        currentUser.role
+      );
+
+      if (res.success) {
+        setFeedback({
+          categoryId: config.id,
+          success: true,
+          msg: `Rules for "${config.displayName}" saved to Supabase!`
+        });
+        // Clear local dirty state for this category
+        setRulesState(prev => {
+          const next = { ...prev };
+          delete next[config.id];
+          return next;
+        });
+        setTimeout(() => setFeedback(null), 3500);
+      } else {
+        setFeedback({
+          categoryId: config.id,
+          success: false,
+          msg: res.error || 'Failed to update rules.'
+        });
+      }
+    } finally {
+      setSavingId(null);
     }
   };
 
@@ -236,11 +254,12 @@ export const CategoryRulesManagement: React.FC = () => {
 
                   <button
                     type="button"
+                    disabled={savingId === cat.id}
                     onClick={() => handleSaveCategoryRule(cat)}
-                    className="px-4 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                    className="px-4 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
                   >
-                    <Save className="w-4 h-4" />
-                    Save {cat.displayName} Rules
+                    <Save className={`w-4 h-4 ${savingId === cat.id ? 'animate-spin' : ''}`} />
+                    {savingId === cat.id ? 'Saving...' : `Save ${cat.displayName} Rules`}
                   </button>
                 </div>
               </div>
@@ -285,7 +304,7 @@ export const CategoryRulesManagement: React.FC = () => {
                         type="number"
                         min={0}
                         max={20}
-                        value={draft.maxStagePrograms !== undefined ? draft.maxStagePrograms : (draft.maxIndividualProgramsPerStudent || 2)}
+                        value={draft.maxStagePrograms !== undefined && draft.maxStagePrograms !== null ? draft.maxStagePrograms : 2}
                         onChange={e => handleRuleChange(cat.id, 'maxStagePrograms', parseInt(e.target.value, 10) || 0)}
                         className="w-full px-3 py-2 rounded-xl bg-white border border-purple-200 text-sm font-mono font-bold text-purple-950 focus:outline-none focus:border-purple-500 shadow-xs"
                       />
@@ -331,7 +350,7 @@ export const CategoryRulesManagement: React.FC = () => {
                         type="number"
                         min={0}
                         max={20}
-                        value={draft.maxNonStagePrograms !== undefined ? draft.maxNonStagePrograms : (draft.maxIndividualProgramsPerStudent || 3)}
+                        value={draft.maxNonStagePrograms !== undefined && draft.maxNonStagePrograms !== null ? draft.maxNonStagePrograms : 3}
                         onChange={e => handleRuleChange(cat.id, 'maxNonStagePrograms', parseInt(e.target.value, 10) || 0)}
                         className="w-full px-3 py-2 rounded-xl bg-white border border-blue-200 text-sm font-mono font-bold text-blue-950 focus:outline-none focus:border-blue-500 shadow-xs"
                       />
@@ -366,7 +385,7 @@ export const CategoryRulesManagement: React.FC = () => {
                         max={20}
                         value={draft.minSportsPrograms ?? 0}
                         onChange={e => handleRuleChange(cat.id, 'minSportsPrograms', parseInt(e.target.value, 10) || 0)}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-emerald-200 text-sm font-mono font-bold text-emerald-950 focus:outline-none focus:border-emerald-500 shadow-xs"
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-emerald-200 text-sm font-mono font-bold text-emerald-950 focus:outline-none focus:border-purple-500 shadow-xs"
                       />
                     </div>
                     <div>
@@ -377,9 +396,9 @@ export const CategoryRulesManagement: React.FC = () => {
                         type="number"
                         min={0}
                         max={20}
-                        value={draft.maxSportsPrograms !== undefined ? draft.maxSportsPrograms : (draft.maxIndividualProgramsPerStudent || 2)}
+                        value={draft.maxSportsPrograms !== undefined && draft.maxSportsPrograms !== null ? draft.maxSportsPrograms : 2}
                         onChange={e => handleRuleChange(cat.id, 'maxSportsPrograms', parseInt(e.target.value, 10) || 0)}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-emerald-200 text-sm font-mono font-bold text-emerald-950 focus:outline-none focus:border-emerald-500 shadow-xs"
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-emerald-200 text-sm font-mono font-bold text-emerald-950 focus:outline-none focus:border-purple-500 shadow-xs"
                       />
                     </div>
                   </div>

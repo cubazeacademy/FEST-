@@ -725,8 +725,11 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       assignedClasses: cleanClasses
     };
 
-    setCategoryConfigs(prev => prev.map(c => c.id === config.id ? updatedConfig : c));
-    saveCategoryConfigDb(updatedConfig).catch(console.error);
+    setCategoryConfigs(prev => {
+      const next = prev.map(c => c.id === config.id ? updatedConfig : c);
+      saveCategoryConfigDb(updatedConfig, next).catch(console.error);
+      return next;
+    });
 
     // If category code changed, cascade updates to classMappings, students, programs, registrations
     if (oldCategoryCode && oldCategoryCode !== newCategoryCode) {
