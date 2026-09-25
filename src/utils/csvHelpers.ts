@@ -888,82 +888,144 @@ export function validateIndividualRegCSVRows(
   maxIndividualProgramsDefault = 5
 ): { rows: ParsedIndividualRegRow[]; validCount: number; errorCount: number } {
   const parsedGrid = parseCSV(csvText);
-  if (parsedGrid.length < 2) {
+  if (parsedGrid.length === 0) {
     return { rows: [], validCount: 0, errorCount: 0 };
   }
 
-  const rawHeaders = parsedGrid[0].map(h => h.trim().toLowerCase().replace(/[\s_-]/g, ''));
-  const progIdx = rawHeaders.findIndex(h => h === 'programcode' || h === 'code' || h === 'eventcode' || h === 'program');
-  const progNameIdx = rawHeaders.findIndex(h => h === 'programname' || h === 'progname' || h === 'eventname' || h === 'name');
-  const catIdx = rawHeaders.findIndex(h => h === 'category' || h === 'cat' || h === 'festcategory' || h === 'section');
-  const maxIdx = rawHeaders.findIndex(h => h === 'allottedlimit' || h === 'allottedcount' || h === 'maxcandidates' || h === 'maxcandidate' || h === 'maxparticipants' || h === 'max');
-  const chestIdx = rawHeaders.findIndex(h => h === 'chestno' || h === 'chestnumber' || h === 'chest' || h === 'chestnum');
-  const admIdx = rawHeaders.findIndex(h => h === 'admissionno' || h === 'admno' || h === 'admission' || h === 'adm');
-  const nameIdx = rawHeaders.findIndex(h => h === 'studentname' || h === 'name' || h === 'student');
+  const cleanLeaderTeam = (teamId || '').trim().toLowerCase();
 
-  // Check for horizontal candidate columns: candidate1, candidate2, cand1, cand2, etc.
+  // Helper to test if a student belongs to the team leader's house
+  const isTeamMatch = (studentTeamId?: string, leaderTeam?: string): boolean => {
+    if (!studentTeamId || !leaderTeam) return true;
+    const sT = studentTeamId.toLowerCase().trim();
+    const lT = leaderTeam.toLowerCase().trim();
+    return sT === lT || sT.includes(lT) || lT.includes(sT);
+  };
+
+  // 1. Detect if row 0 is a header row
+  const firstRow = parsedGrid[0] || [];
+  const rawHeaders = firstRow.map(h => h.trim().toLowerCase().replace(/[\s_\-#]/g, ''));
+  
+  const hasHeaderKeywords = rawHeaders.some(h => 
+    h.includes('name') || 
+    h.includes('chest') || 
+    h.includes('adm') || 
+    h.includes('program') || 
+    h.includes('code') || 
+    h.includes('cat') || 
+    h.includes('house') || 
+    h.includes('team') ||
+    h.includes('candidate')
+  );
+
+  let startRowIndex = hasHeaderKeywords ? 1 : 0;
+
+  // Header index detection with broad aliases
+  let progIdx = -1;
+  let progNameIdx = -1;
+  let catIdx = -1;
+  let maxIdx = -1;
+  let chestIdx = -1;
+  let admIdx = -1;
+  let nameIdx = -1;
+  let houseIdx = -1;
   const candidateColumnIndices: number[] = [];
-  rawHeaders.forEach((h, idx) => {
-    if (
-      h.startsWith('candidate') || 
-      h.startsWith('cand') || 
-      h.startsWith('student') && idx > 3 || 
-      h.startsWith('chest') && idx > 3 ||
-      h.startsWith('slot')
-    ) {
-      candidateColumnIndices.push(idx);
+
+  if (hasHeaderKeywords) {
+    rawHeaders.forEach((h, idx) => {
+      if (h === 'programcode' || h === 'progcode' || h === 'eventcode' || h === 'itemcode' || h === 'pcode' || h === 'code') {
+        progIdx = idx;
+      } else if (h === 'programname' || h === 'progname' || h === 'eventname' || h === 'itemname' || h === 'program' || h === 'event' || h === 'item') {
+        progNameIdx = idx;
+      } else if (h === 'category' || h === 'cat' || h === 'festcategory' || h === 'group') {
+        catIdx = idx;
+      } else if (h === 'allottedlimit' || h === 'allotted' || h === 'limit' || h === 'maxcandidates' || h === 'maxparticipants' || h === 'quota' || h === 'max') {
+        maxIdx = idx;
+      } else if (h === 'chestno' || h === 'chestnumber' || h === 'chest' || h === 'chestnum' || h === 'cno') {
+        chestIdx = idx;
+      } else if (h === 'admissionno' || h === 'admno' || h === 'admission' || h === 'adm' || h === 'admnum' || h === 'admissionnumber') {
+        admIdx = idx;
+      } else if (h === 'studentname' || h === 'candidatename' || h === 'student' || h === 'candidate' || (h === 'name' && nameIdx < 0)) {
+        nameIdx = idx;
+      } else if (h === 'house' || h === 'team' || h === 'housename' || h === 'teamname') {
+        houseIdx = idx;
+      } else if (h.startsWith('candidate') || h.startsWith('cand') || h.startsWith('slot')) {
+        candidateColumnIndices.push(idx);
+      }
+    });
+  }
+
+  // If header indices are not fully detected, auto-detect column semantics from content
+  const sampleRows = parsedGrid.slice(startRowIndex, startRowIndex + 10);
+  if (sampleRows.length > 0) {
+    const numCols = Math.max(...sampleRows.map(r => r.length));
+
+    for (let c = 0; c < numCols; c++) {
+      let codeMatches = 0;
+      let progNameMatches = 0;
+      let catMatches = 0;
+      let chestMatches = 0;
+      let admMatches = 0;
+      let nameMatches = 0;
+      let houseMatches = 0;
+
+      sampleRows.forEach(row => {
+        const val = (row[c] || '').trim();
+        if (!val) return;
+        const valLow = val.toLowerCase();
+
+        if (programs.some(p => p.code.toLowerCase() === valLow)) codeMatches++;
+        if (programs.some(p => p.name.toLowerCase() === valLow)) progNameMatches++;
+        if (categoryConfigs?.some(cfg => isCategoryMatch(cfg.category, val, categoryConfigs)) || ['bidaya', 'uoola', 'thaniyya', 'aliya', 'junior', 'senior', 'sub_junior'].includes(valLow)) catMatches++;
+        if (students.some(s => s.chestNumber && s.chestNumber.toString() === val)) chestMatches++;
+        if (students.some(s => s.admissionNo.toLowerCase() === valLow)) admMatches++;
+        if (students.some(s => s.name.toLowerCase() === valLow)) nameMatches++;
+        if (['saraha', 'sakan', 'sebat'].some(t => t.includes(valLow) || valLow.includes(t))) houseMatches++;
+      });
+
+      if (progIdx < 0 && codeMatches >= 2) progIdx = c;
+      if (progNameIdx < 0 && progNameMatches >= 2) progNameIdx = c;
+      if (catIdx < 0 && catMatches >= 2) catIdx = c;
+      if (chestIdx < 0 && chestMatches >= 2) chestIdx = c;
+      if (admIdx < 0 && admMatches >= 2) admIdx = c;
+      if (nameIdx < 0 && nameMatches >= 2) nameIdx = c;
+      if (houseIdx < 0 && houseMatches >= 2) houseIdx = c;
     }
-  });
+  }
 
   const isHorizontalFormat = candidateColumnIndices.length > 0 || (
-    progIdx >= 0 && progNameIdx >= 0 && (catIdx >= 0 || maxIdx >= 0) && parsedGrid[0].length >= 5 && chestIdx < 0 && admIdx < 0
+    progIdx >= 0 && progNameIdx >= 0 && (catIdx >= 0 || maxIdx >= 0) && firstRow.length >= 5 && chestIdx < 0 && admIdx < 0
   );
 
   const rows: ParsedIndividualRegRow[] = [];
-
-  // Track counts within this CSV batch to avoid exceeding quotas in a single upload
   const csvStudentCounts = new Map<string, number>();
   const csvProgramTeamEntries = new Map<string, number>();
   const csvSeenPairs = new Set<string>();
 
-  for (let i = 1; i < parsedGrid.length; i++) {
+  for (let i = startRowIndex; i < parsedGrid.length; i++) {
     const rawRow = parsedGrid[i];
-    if (rawRow.length === 0 || (rawRow.length === 1 && !rawRow[0])) continue;
+    if (rawRow.length === 0 || (rawRow.length === 1 && !rawRow[0]?.trim())) continue;
 
-    // 1. Resolve Program Metadata from row
-    let progCode = '';
-    let progName = '';
-    let category = '';
+    // 1. Resolve Program & Category info from row
+    let progCode = progIdx >= 0 ? rawRow[progIdx] || '' : '';
+    let progName = progNameIdx >= 0 ? rawRow[progNameIdx] || '' : '';
+    let category = catIdx >= 0 ? rawRow[catIdx] || '' : '';
     let maxCandidates = 2;
 
-    if (progIdx >= 0) {
-      progCode = rawRow[progIdx] || '';
-    } else {
-      progCode = rawRow[0] || '';
-    }
-
-    if (progNameIdx >= 0) {
-      progName = rawRow[progNameIdx] || '';
-    } else if (rawRow.length > 1 && !isHorizontalFormat) {
-      progName = rawRow[1] || '';
-    } else if (rawRow.length > 1 && isHorizontalFormat) {
-      progName = rawRow[1] || '';
-    }
-
-    if (catIdx >= 0) {
-      category = rawRow[catIdx] || '';
-    } else if (rawRow.length > 2 && isHorizontalFormat) {
-      // Check if col 2 is Category or AllottedLimit
-      const isNum = /^\d+$/.test(rawRow[2]?.trim());
-      if (!isNum) category = rawRow[2] || '';
-      else maxCandidates = parseInt(rawRow[2], 10) || 2;
-    }
-
     if (maxIdx >= 0 && rawRow[maxIdx]) {
-      maxCandidates = parseInt(rawRow[maxIdx], 10) || 2;
-    } else if (rawRow.length > 3 && isHorizontalFormat) {
-      const isNum = /^\d+$/.test(rawRow[3]?.trim());
-      if (isNum) maxCandidates = parseInt(rawRow[3], 10) || 2;
+      const parsedMax = parseInt(rawRow[maxIdx], 10);
+      if (!isNaN(parsedMax) && parsedMax > 0) maxCandidates = parsedMax;
+    }
+
+    // Positional fallbacks if indices were not detected
+    if (!progCode && !progName && isHorizontalFormat) {
+      progCode = rawRow[0] || '';
+      progName = rawRow[1] || '';
+      if (rawRow.length > 2) category = rawRow[2] || '';
+      if (rawRow.length > 3) {
+        const pMax = parseInt(rawRow[3], 10);
+        if (!isNaN(pMax)) maxCandidates = pMax;
+      }
     }
 
     const cleanProg = progCode.trim();
@@ -971,17 +1033,18 @@ export function validateIndividualRegCSVRows(
     const cleanCat = category.trim();
 
     // Resolve Program with precise category scoping
-    let matchedProgram = programs.find(p => p.code.toLowerCase().trim() === cleanProg.toLowerCase());
+    let matchedProgram = programs.find(p => cleanProg && p.code.toLowerCase().trim() === cleanProg.toLowerCase());
     if (!matchedProgram && cleanCat) {
       matchedProgram = programs.find(
-        p => p.name.toLowerCase().trim() === (cleanProgName || cleanProg).toLowerCase() &&
+        p => (cleanProgName || cleanProg) &&
+             p.name.toLowerCase().trim() === (cleanProgName || cleanProg).toLowerCase() &&
              isCategoryMatch(p.category, cleanCat, categoryConfigs)
       );
     }
-    if (!matchedProgram) {
+    if (!matchedProgram && (cleanProgName || cleanProg)) {
       matchedProgram = programs.find(
-        p => (cleanProgName && p.name.toLowerCase().trim() === cleanProgName.toLowerCase()) || 
-             p.name.toLowerCase().trim() === cleanProg.toLowerCase() || 
+        p => p.name.toLowerCase().trim() === (cleanProgName || cleanProg).toLowerCase() ||
+             p.code.toLowerCase().trim() === (cleanProgName || cleanProg).toLowerCase() ||
              p.id === cleanProg
       );
     }
@@ -1003,8 +1066,16 @@ export function validateIndividualRegCSVRows(
       }
     }
 
-    // 2. Extract Candidate Slots
-    const candidateSlots: { slotNum: number; rawValue: string }[] = [];
+    // 2. Extract Candidate Slots for this row
+    interface CandidateSlotInfo {
+      slotNum: number;
+      slotChest?: string;
+      slotAdm?: string;
+      slotName?: string;
+      rawValue: string;
+    }
+
+    const candidateSlots: CandidateSlotInfo[] = [];
 
     if (isHorizontalFormat) {
       if (candidateColumnIndices.length > 0) {
@@ -1013,7 +1084,6 @@ export function validateIndividualRegCSVRows(
           if (val) candidateSlots.push({ slotNum: idx + 1, rawValue: val });
         });
       } else {
-        // Assume all columns from index 4 onwards (or index 3 if only code, name, limit) are candidate slots
         const startIdx = (catIdx >= 0 && maxIdx >= 0) ? 4 : (rawRow.length >= 6 ? 4 : 3);
         for (let c = startIdx; c < rawRow.length; c++) {
           const val = rawRow[c]?.trim();
@@ -1021,34 +1091,24 @@ export function validateIndividualRegCSVRows(
         }
       }
     } else {
-      // Standard vertical single-candidate format
-      let chestVal = (chestIdx >= 0 ? rawRow[chestIdx] : '') || '';
-      let admVal = (admIdx >= 0 ? rawRow[admIdx] : '') || '';
-      let nameVal = (nameIdx >= 0 ? rawRow[nameIdx] : '') || '';
+      // Standard vertical row with specific candidate columns
+      const rowChest = chestIdx >= 0 ? (rawRow[chestIdx] || '').trim() : '';
+      const rowAdm = admIdx >= 0 ? (rawRow[admIdx] || '').trim() : '';
+      const rowName = nameIdx >= 0 ? (rawRow[nameIdx] || '').trim() : '';
 
-      if (chestIdx < 0 && admIdx < 0 && nameIdx < 0) {
-        if (rawRow.length >= 5) {
-          chestVal = rawRow[2] || '';
-          admVal = rawRow[3] || '';
-          nameVal = rawRow[4] || '';
-        } else if (rawRow.length >= 4) {
-          admVal = rawRow[2] || '';
-          nameVal = rawRow[3] || '';
-        } else if (rawRow.length >= 2) {
-          admVal = rawRow[1] || '';
-          nameVal = rawRow[2] || '';
-        }
-      }
-
-      const singleIdentifier = chestVal || admVal || nameVal;
-      if (singleIdentifier) {
-        candidateSlots.push({ slotNum: 1, rawValue: singleIdentifier });
+      const rawIdentifier = rowChest || rowAdm || rowName;
+      if (rawIdentifier) {
+        candidateSlots.push({
+          slotNum: 1,
+          slotChest: rowChest,
+          slotAdm: rowAdm,
+          slotName: rowName,
+          rawValue: rawIdentifier
+        });
       }
     }
 
-    // If no candidate was filled on this row
     if (candidateSlots.length === 0) {
-      // Empty row or unassigned template row
       continue;
     }
 
@@ -1060,26 +1120,70 @@ export function validateIndividualRegCSVRows(
 
       if (!cleanVal) continue;
 
-      // Find student by Chest Number first, then Admission Number, then Name
+      const targetCategory = cleanCat || matchedProgram?.category || '';
+
       let matchedStudent: Student | undefined;
 
-      // 1. Match Chest Number
-      matchedStudent = students.find(
-        s => s.chestNumber && (s.chestNumber.toString() === cleanVal || s.chestNumber.toString().toLowerCase() === cleanVal.toLowerCase())
-      );
-
-      // 2. Match Admission Number
-      if (!matchedStudent) {
-        matchedStudent = students.find(
-          s => s.admissionNo.toLowerCase() === cleanVal.toLowerCase()
-        );
+      // STEP 1: If Admission No is present in row or rawValue, match by Admission No (Exact unique key)
+      const admToTry = (slot.slotAdm || cleanVal).toLowerCase().trim();
+      if (admToTry) {
+        matchedStudent = students.find(s => s.admissionNo && s.admissionNo.toLowerCase().trim() === admToTry);
       }
 
-      // 3. Match Student Name
-      if (!matchedStudent) {
+      // STEP 2: If Chest No is present, match by Chest No with team & category preference
+      const chestToTry = (slot.slotChest || cleanVal).trim();
+      if (!matchedStudent && chestToTry && /^\d+$/.test(chestToTry)) {
+        const chestNum = Number(chestToTry);
+        // Prefer student in leader's house & category
         matchedStudent = students.find(
-          s => s.name.toLowerCase() === cleanVal.toLowerCase()
+          s => s.chestNumber && Number(s.chestNumber) === chestNum &&
+               isTeamMatch(s.teamId, cleanLeaderTeam) &&
+               isCategoryMatch(s.category, targetCategory, categoryConfigs)
         );
+        // Then prefer student in leader's house
+        if (!matchedStudent) {
+          matchedStudent = students.find(
+            s => s.chestNumber && Number(s.chestNumber) === chestNum &&
+                 isTeamMatch(s.teamId, cleanLeaderTeam)
+          );
+        }
+        // Then match any student with this chest number
+        if (!matchedStudent) {
+          matchedStudent = students.find(
+            s => s.chestNumber && Number(s.chestNumber) === chestNum
+          );
+        }
+      }
+
+      // STEP 3: Match by Student Name with strict team & category disambiguation
+      const nameToTry = (slot.slotName || cleanVal).toLowerCase().trim();
+      if (!matchedStudent && nameToTry) {
+        // A. Prefer student with matching name in leader's house AND category
+        matchedStudent = students.find(
+          s => s.name && s.name.toLowerCase().trim() === nameToTry &&
+               isTeamMatch(s.teamId, cleanLeaderTeam) &&
+               isCategoryMatch(s.category, targetCategory, categoryConfigs)
+        );
+        // B. Prefer student with matching name in leader's house
+        if (!matchedStudent) {
+          matchedStudent = students.find(
+            s => s.name && s.name.toLowerCase().trim() === nameToTry &&
+                 isTeamMatch(s.teamId, cleanLeaderTeam)
+          );
+        }
+        // C. Prefer student with matching name in category
+        if (!matchedStudent) {
+          matchedStudent = students.find(
+            s => s.name && s.name.toLowerCase().trim() === nameToTry &&
+                 isCategoryMatch(s.category, targetCategory, categoryConfigs)
+          );
+        }
+        // D. Fallback to any student with matching name
+        if (!matchedStudent) {
+          matchedStudent = students.find(
+            s => s.name && s.name.toLowerCase().trim() === nameToTry
+          );
+        }
       }
 
       let detectedName = '';
@@ -1094,13 +1198,9 @@ export function validateIndividualRegCSVRows(
         resolvedChest = matchedStudent.chestNumber ? matchedStudent.chestNumber.toString() : '';
 
         // Validate Team ownership with flexible matching
-        const cleanLeaderTeam = (teamId || '').trim().toLowerCase();
         if (cleanLeaderTeam) {
-          const sTeam = (matchedStudent.teamId || '').trim().toLowerCase();
-          const isTeamMatch = sTeam === cleanLeaderTeam || 
-                              sTeam.includes(cleanLeaderTeam) || 
-                              cleanLeaderTeam.includes(sTeam);
-          if (!isTeamMatch) {
+          const isTeamOk = isTeamMatch(matchedStudent.teamId, cleanLeaderTeam);
+          if (!isTeamOk) {
             slotErrors.push(`Student "${matchedStudent.name}" belongs to another house/team, not your house.`);
           }
         }
@@ -1113,8 +1213,8 @@ export function validateIndividualRegCSVRows(
           slotWarnings.push(`Student "${matchedStudent.name}" has no chest number assigned yet.`);
         }
 
-        // Category match check
-        if (matchedProgram && matchedStudent.category !== matchedProgram.category) {
+        // Category match check using phonetic & alias tolerance
+        if (matchedProgram && !isCategoryMatch(matchedStudent.category, matchedProgram.category, categoryConfigs)) {
           slotErrors.push(
             `Category mismatch: Student "${matchedStudent.name}" is in "${matchedStudent.category}", but program is for "${matchedProgram.category}".`
           );
@@ -1127,7 +1227,7 @@ export function validateIndividualRegCSVRows(
 
         const alreadyRegistered = existingRegistrations.some(
           r =>
-            r.programId === matchedProgram.id &&
+            (r.programId === matchedProgram.id || (matchedProgram.code && r.programId === matchedProgram.code)) &&
             r.studentId === matchedStudent.id &&
             r.status === 'CONFIRMED'
         );
@@ -1140,7 +1240,7 @@ export function validateIndividualRegCSVRows(
           csvSeenPairs.add(pairKey);
 
           // Individual participation quota check
-          const currentCatConfig = categoryConfigs?.find(c => c.category === matchedStudent.category);
+          const currentCatConfig = categoryConfigs?.find(c => isCategoryMatch(c.category, matchedStudent.category, categoryConfigs));
           const maxQuota = currentCatConfig?.maxIndividualProgramsPerStudent ?? maxIndividualProgramsDefault;
 
           const existingCount = existingRegistrations.filter(
@@ -1192,15 +1292,16 @@ export function validateIndividualRegCSVRows(
 
           // Program house limit check (allotted candidate limit per team)
           const teamHouseLimit = matchedProgram.maxParticipants || maxCandidates || 1;
+          const studentHouseId = matchedStudent.teamId || cleanLeaderTeam;
           const existingTeamCount = existingRegistrations.filter(
             r =>
-              r.programId === matchedProgram.id &&
-              r.teamId === matchedStudent.teamId &&
+              (r.programId === matchedProgram.id || (matchedProgram.code && r.programId === matchedProgram.code)) &&
+              isTeamMatch(r.teamId, studentHouseId) &&
               r.programType === 'INDIVIDUAL' &&
               r.status === 'CONFIRMED'
           ).length;
 
-          const programTeamKey = `${matchedProgram.id}_${matchedStudent.teamId}`;
+          const programTeamKey = `${matchedProgram.id}_${studentHouseId}`;
           const batchTeamCount = csvProgramTeamEntries.get(programTeamKey) || 0;
           const totalTeamEntries = existingTeamCount + batchTeamCount + 1;
 
@@ -1218,7 +1319,7 @@ export function validateIndividualRegCSVRows(
 
       rows.push({
         rowIndex: i + 1,
-        programCode: cleanProg,
+        programCode: matchedProgram?.code || cleanProg,
         programName: matchedProgram?.name || cleanProgName,
         category: cleanCat || matchedProgram?.category || matchedStudent?.category,
         maxCandidates: matchedProgram?.maxParticipants || maxCandidates || 2,
