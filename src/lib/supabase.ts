@@ -983,6 +983,40 @@ export async function deleteRegistrationDb(registrationId: string) {
   }
 }
 
+export async function deleteRegistrationsBatchDb(registrationIds: string[]) {
+  try {
+    if (registrationIds.length === 0) return { success: true };
+    const { error } = await supabase.from('registrations').delete().in('id', registrationIds);
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to batch delete registrations:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function deleteRegistrationsByTeamDb(teamId: string) {
+  try {
+    const { error } = await supabase.from('registrations').delete().eq('team_id', teamId);
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to delete registrations by team:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function clearAllRegistrationsDb() {
+  try {
+    const { error } = await supabase.from('registrations').delete().neq('id', '___NONE___');
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to clear all registrations:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
 export async function saveResultDb(result: ProgramResult) {
   try {
     const { error: resErr } = await supabase.from('results').upsert(mapResultToDb(result));

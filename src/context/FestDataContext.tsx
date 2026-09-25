@@ -17,6 +17,9 @@ import {
   saveRegistrationDb,
   saveRegistrationsBatchDb,
   deleteRegistrationDb,
+  deleteRegistrationsBatchDb,
+  deleteRegistrationsByTeamDb,
+  clearAllRegistrationsDb,
   saveResultDb,
   deleteResultDb,
   saveSettingsDb,
@@ -137,6 +140,9 @@ interface FestDataContextType {
   updateGroupStudents: (registrationId: string, groupName: string, selectedStudentIds: string[], performedBy: string, role: UserRole) => { success: boolean; error?: string };
   deleteGroupRegistration: (registrationId: string, performedBy: string, role: UserRole) => { success: boolean; error?: string };
   withdrawRegistration: (registrationId: string, performedBy: string, role: UserRole) => { success: boolean; error?: string };
+  clearAllRegistrations: (performedBy: string, role: UserRole) => { success: boolean; count: number; error?: string };
+  clearRegistrationsByTeam: (teamId: string, performedBy: string, role: UserRole) => { success: boolean; count: number; error?: string };
+  deleteRegistrationsBatch: (registrationIds: string[], performedBy: string, role: UserRole) => { success: boolean; count: number; error?: string };
 
   // Result Actions
   saveOrSubmitResult: (result: Omit<ProgramResult, 'id'> & { id?: string }, isPublish: boolean, performedBy: string, role: UserRole) => { success: boolean; error?: string };
@@ -1169,6 +1175,47 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return { success: true };
   };
 
+  const clearAllRegistrations = (performedBy: string, role: UserRole): { success: boolean; count: number; error?: string } => {
+    if (role !== 'SUPER_ADMIN' && role !== 'ADMIN') {
+      return { success: false, count: 0, error: 'Only Administrators can clear all registrations.' };
+    }
+
+    const count = registrations.length;
+    setRegistrations([]);
+    clearAllRegistrationsDb().catch(console.error);
+    logAudit('CLEAR_ALL_REGISTRATIONS', 'REGISTRATION', `Cleared all ${count} registrations across all houses`, performedBy, role);
+    return { success: true, count };
+  };
+
+  const clearRegistrationsByTeam = (teamId: string, performedBy: string, role: UserRole): { success: boolean; count: number; error?: string } => {
+    if (role !== 'SUPER_ADMIN' && role !== 'ADMIN') {
+      return { success: false, count: 0, error: 'Only Administrators can clear house registrations.' };
+    }
+
+    const team = teams.find(t => t.id === teamId);
+    const affected = registrations.filter(r => r.teamId === teamId);
+    const count = affected.length;
+
+    setRegistrations(prev => prev.filter(r => r.teamId !== teamId));
+    deleteRegistrationsByTeamDb(teamId).catch(console.error);
+    logAudit('CLEAR_TEAM_REGISTRATIONS', 'REGISTRATION', `Cleared ${count} registrations for house "${team?.name || teamId}"`, performedBy, role);
+    return { success: true, count };
+  };
+
+  const deleteRegistrationsBatch = (registrationIds: string[], performedBy: string, role: UserRole): { success: boolean; count: number; error?: string } => {
+    if (!settings.registrationOpen && role !== 'SUPER_ADMIN' && role !== 'ADMIN') {
+      return { success: false, count: 0, error: 'Registration is closed.' };
+    }
+
+    if (!registrationIds.length) return { success: true, count: 0 };
+
+    const idSet = new Set(registrationIds);
+    setRegistrations(prev => prev.filter(r => !idSet.has(r.id)));
+    deleteRegistrationsBatchDb(registrationIds).catch(console.error);
+    logAudit('BATCH_DELETE_REGISTRATIONS', 'REGISTRATION', `Deleted ${registrationIds.length} selected registrations`, performedBy, role);
+    return { success: true, count: registrationIds.length };
+  };
+
   const importIndividualRegistrationsBatch = (
     entries: { studentId: string; programId: string }[],
     performedBy: string,
@@ -1701,6 +1748,9 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         updateGroupStudents,
         deleteGroupRegistration,
         withdrawRegistration,
+        clearAllRegistrations,
+        clearRegistrationsByTeam,
+        deleteRegistrationsBatch,
         saveOrSubmitResult,
         unpublishResult,
         deleteResult,
