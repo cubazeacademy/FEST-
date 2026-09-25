@@ -64,13 +64,13 @@ export function mapCategoryConfigFromDb(row: any): CategoryConfig {
     sectionScope: row.section_scope || 'ALL',
     assignedClasses: row.assigned_classes || [],
     maxIndividualProgramsPerStudent: row.max_individual_programs_per_student != null ? Number(row.max_individual_programs_per_student) : 5,
-    minIndividualProgramsPerStudent: row.min_individual_programs_per_student != null ? Number(row.min_individual_programs_per_student) : 0,
-    minStagePrograms: row.min_stage_programs != null ? Number(row.min_stage_programs) : 0,
-    maxStagePrograms: row.max_stage_programs != null ? Number(row.max_stage_programs) : 2,
-    minNonStagePrograms: row.min_non_stage_programs != null ? Number(row.min_non_stage_programs) : 0,
-    maxNonStagePrograms: row.max_non_stage_programs != null ? Number(row.max_non_stage_programs) : 3,
-    minSportsPrograms: row.min_sports_programs != null ? Number(row.min_sports_programs) : 0,
-    maxSportsPrograms: row.max_sports_programs != null ? Number(row.max_sports_programs) : 2,
+    minIndividualProgramsPerStudent: row.min_individual_programs_per_student != null ? Number(row.min_individual_programs_per_student) : undefined,
+    minStagePrograms: row.min_stage_programs != null ? Number(row.min_stage_programs) : undefined,
+    maxStagePrograms: row.max_stage_programs != null ? Number(row.max_stage_programs) : undefined,
+    minNonStagePrograms: row.min_non_stage_programs != null ? Number(row.min_non_stage_programs) : undefined,
+    maxNonStagePrograms: row.max_non_stage_programs != null ? Number(row.max_non_stage_programs) : undefined,
+    minSportsPrograms: row.min_sports_programs != null ? Number(row.min_sports_programs) : undefined,
+    maxSportsPrograms: row.max_sports_programs != null ? Number(row.max_sports_programs) : undefined,
     chestNoStart: row.chest_no_start != null ? Number(row.chest_no_start) : 101,
     chestNoEnd: row.chest_no_end != null ? Number(row.chest_no_end) : 199,
     status: row.status || 'ACTIVE'
@@ -445,20 +445,17 @@ export async function fetchFullRelationalData() {
     const snapshotCategories: CategoryConfig[] = festStateRes.data?.data?.categoryConfigs || [];
     const mappedCategories = (categoriesRes.data ? categoriesRes.data.map(mapCategoryConfigFromDb) : []).map(cat => {
       const snap = snapshotCategories.find(s => s.id === cat.id || s.category === cat.category);
-      if (snap) {
-        return {
-          ...cat,
-          minStagePrograms: cat.minStagePrograms !== undefined && cat.minStagePrograms !== null ? cat.minStagePrograms : (snap.minStagePrograms ?? 0),
-          maxStagePrograms: cat.maxStagePrograms !== undefined && cat.maxStagePrograms !== null ? cat.maxStagePrograms : (snap.maxStagePrograms ?? 2),
-          minNonStagePrograms: cat.minNonStagePrograms !== undefined && cat.minNonStagePrograms !== null ? cat.minNonStagePrograms : (snap.minNonStagePrograms ?? 0),
-          maxNonStagePrograms: cat.maxNonStagePrograms !== undefined && cat.maxNonStagePrograms !== null ? cat.maxNonStagePrograms : (snap.maxNonStagePrograms ?? 3),
-          minSportsPrograms: cat.minSportsPrograms !== undefined && cat.minSportsPrograms !== null ? cat.minSportsPrograms : (snap.minSportsPrograms ?? 0),
-          maxSportsPrograms: cat.maxSportsPrograms !== undefined && cat.maxSportsPrograms !== null ? cat.maxSportsPrograms : (snap.maxSportsPrograms ?? 2),
-          minIndividualProgramsPerStudent: cat.minIndividualProgramsPerStudent ?? snap.minIndividualProgramsPerStudent ?? 0,
-          maxIndividualProgramsPerStudent: cat.maxIndividualProgramsPerStudent || snap.maxIndividualProgramsPerStudent || 5
-        };
-      }
-      return cat;
+      return {
+        ...cat,
+        minStagePrograms: cat.minStagePrograms !== undefined ? cat.minStagePrograms : (snap?.minStagePrograms ?? 0),
+        maxStagePrograms: cat.maxStagePrograms !== undefined ? cat.maxStagePrograms : (snap?.maxStagePrograms ?? 2),
+        minNonStagePrograms: cat.minNonStagePrograms !== undefined ? cat.minNonStagePrograms : (snap?.minNonStagePrograms ?? 0),
+        maxNonStagePrograms: cat.maxNonStagePrograms !== undefined ? cat.maxNonStagePrograms : (snap?.maxNonStagePrograms ?? 3),
+        minSportsPrograms: cat.minSportsPrograms !== undefined ? cat.minSportsPrograms : (snap?.minSportsPrograms ?? 0),
+        maxSportsPrograms: cat.maxSportsPrograms !== undefined ? cat.maxSportsPrograms : (snap?.maxSportsPrograms ?? 2),
+        minIndividualProgramsPerStudent: cat.minIndividualProgramsPerStudent !== undefined ? cat.minIndividualProgramsPerStudent : (snap?.minIndividualProgramsPerStudent ?? 0),
+        maxIndividualProgramsPerStudent: snap?.maxIndividualProgramsPerStudent || cat.maxIndividualProgramsPerStudent || 5
+      };
     });
 
     return {
@@ -1055,22 +1052,21 @@ export async function saveCategoryConfigDb(config: CategoryConfig, allConfigs?: 
         .eq('id', FEST_STATE_KEY)
         .maybeSingle();
 
-      if (stateDoc?.data) {
-        const currentList: CategoryConfig[] = stateDoc.data.categoryConfigs || [];
-        const updatedList = allConfigs || (
-          currentList.some(c => c.id === config.id)
-            ? currentList.map(c => c.id === config.id ? config : c)
-            : [...currentList, config]
-        );
-        await supabase.from('fest_state').upsert({
-          id: FEST_STATE_KEY,
-          data: {
-            ...stateDoc.data,
-            categoryConfigs: updatedList
-          },
-          updated_at: new Date().toISOString()
-        });
-      }
+      const existingData = stateDoc?.data || {};
+      const currentList: CategoryConfig[] = existingData.categoryConfigs || [];
+      const updatedList = allConfigs || (
+        currentList.some(c => c.id === config.id)
+          ? currentList.map(c => c.id === config.id ? config : c)
+          : [...currentList, config]
+      );
+      await supabase.from('fest_state').upsert({
+        id: FEST_STATE_KEY,
+        data: {
+          ...existingData,
+          categoryConfigs: updatedList
+        },
+        updated_at: new Date().toISOString()
+      });
     } catch (docErr) {
       console.warn('Failed to mirror category config to fest_state:', docErr);
     }
