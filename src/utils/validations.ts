@@ -151,6 +151,46 @@ export function getStudentParticipationBreakdown(
 }
 
 /**
+ * High-performance single-pass aggregation: Builds an O(1) participation lookup map for all students
+ */
+export function getMultiStudentParticipationMap(
+  registrations: Registration[]
+): Map<string, StudentParticipationBreakdown> {
+  const map = new Map<string, StudentParticipationBreakdown>();
+
+  for (let i = 0; i < registrations.length; i++) {
+    const r = registrations[i];
+    if (!r.studentId || r.programType !== 'INDIVIDUAL' || (r.status && r.status.toUpperCase() === 'WITHDRAWN')) {
+      continue;
+    }
+
+    let item = map.get(r.studentId);
+    if (!item) {
+      item = {
+        totalIndividual: 0,
+        stageCount: 0,
+        nonStageCount: 0,
+        sportsCount: 0
+      };
+      map.set(r.studentId, item);
+    }
+
+    item.totalIndividual++;
+    if (r.section === 'SPORTS' || r.subsection === 'SPORTS_EVENT') {
+      item.sportsCount++;
+    } else if (r.subsection === 'STAGE') {
+      item.stageCount++;
+    } else if (r.subsection === 'NON_STAGE') {
+      item.nonStageCount++;
+    } else {
+      item.stageCount++;
+    }
+  }
+
+  return map;
+}
+
+/**
  * Validates individual student registration against category, duplicate entries, and participation limits (overall, stage, non-stage, sports)
  */
 export function validateIndividualRegistration(

@@ -1,7 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useFestData } from '../../context/FestDataContext';
 import { useAuth } from '../../context/AuthContext';
 import { Modal } from '../common/Modal';
+import { Pagination } from '../common/Pagination';
+import { useDebounce } from '../../hooks/useDebounce';
 import { Program, Registration, FestCategory, Team, Student } from '../../types';
 import { exportRegistrationsToSpreadsheet } from '../../utils/csvHelpers';
 import { isCategoryMatch } from '../../utils/validations';
@@ -89,6 +91,7 @@ export const RegistrationMaster: React.FC = () => {
 
   // Left Sidebar State
   const [programSearch, setProgramSearch] = useState('');
+  const debouncedProgramSearch = useDebounce(programSearch, 200);
   const [progStatusFilter, setProgStatusFilter] = useState<'ALL' | 'OPEN' | 'CLOSED' | 'INDIVIDUAL' | 'GROUP'>('ALL');
   const [collectionFilter, setCollectionFilter] = useState<string>('ALL');
 
@@ -101,12 +104,25 @@ export const RegistrationMaster: React.FC = () => {
   const [selectedTeamFilter, setSelectedTeamFilter] = useState<string>('ALL');
   const [viewMode, setViewMode] = useState<'CARDS' | 'TABLE'>('CARDS');
   const [candidateSearch, setCandidateSearch] = useState('');
+  const debouncedCandidateSearch = useDebounce(candidateSearch, 200);
 
   // Register Modal State
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [registerStudentSearch, setRegisterStudentSearch] = useState('');
+  const debouncedRegisterStudentSearch = useDebounce(registerStudentSearch, 150);
   const [selectedStudentForReg, setSelectedStudentForReg] = useState<string>('');
   const [isSubmittingReg, setIsSubmittingReg] = useState(false);
+
+  // High performance student lookup maps
+  const { studentMapById, studentMapByChest } = useMemo(() => {
+    const byId = new Map<string, Student>();
+    const byChest = new Map<number, Student>();
+    students.forEach(s => {
+      byId.set(s.id, s);
+      if (s.chestNumber) byChest.set(Number(s.chestNumber), s);
+    });
+    return { studentMapById: byId, studentMapByChest: byChest };
+  }, [students]);
 
   // Group Details Modal State
   const [inspectedGroup, setInspectedGroup] = useState<Registration | null>(null);
@@ -204,7 +220,7 @@ export const RegistrationMaster: React.FC = () => {
   const filteredPrograms = useMemo(() => {
     return availablePrograms.filter(p => {
       // 1. Search Query
-      const q = programSearch.toLowerCase().trim();
+      const q = debouncedProgramSearch.toLowerCase().trim();
       const matchQ =
         !q ||
         p.name.toLowerCase().includes(q) ||
@@ -233,7 +249,7 @@ export const RegistrationMaster: React.FC = () => {
 
       return true;
     });
-  }, [availablePrograms, programSearch, progStatusFilter, collectionFilter, categoryConfigs]);
+  }, [availablePrograms, debouncedProgramSearch, progStatusFilter, collectionFilter, categoryConfigs]);
 
   // Active Selected Program
   const activeProgram = useMemo(() => {
@@ -294,11 +310,11 @@ export const RegistrationMaster: React.FC = () => {
       }
 
       // Candidate search query
-      const q = candidateSearch.toLowerCase().trim();
+      const q = debouncedCandidateSearch.toLowerCase().trim();
       if (!q) return true;
 
       // Lookup student for enriched search
-      const student = students.find(s => s.id === r.studentId || (s.chestNumber && r.chestNumber && Number(s.chestNumber) === Number(r.chestNumber)));
+      const student = r.studentId ? studentMapById.get(r.studentId) : (r.chestNumber ? studentMapByChest.get(Number(r.chestNumber)) : undefined);
       const sName = (r.studentName || student?.name || '').toLowerCase();
       const sAdm = (r.admissionNo || student?.admissionNo || '').toLowerCase();
       const sChest = (r.chestNumber || student?.chestNumber || '').toString();
@@ -318,7 +334,54 @@ export const RegistrationMaster: React.FC = () => {
         )
       );
     });
-  }, [activeProgramRegistrations, selectedTeamFilter, candidateSearch, teams, students]);
+  }, [activeProgramRegistrations, selectedTeamFilter, debouncedCandidateSearch, teams, studentMapById, studentMapByChest]);
+
+  // Cards Pagination
+  const [cardsPage, setCardsPage] = useState(1);
+  const [cardsPageSize, setCardsPageSize] = useState(24);
+
+  useEffect(() => {
+    setCardsPage(1);
+  }, [activeProgram?.id, selectedTeamFilter, debouncedCandidateSearch]);
+
+  const paginatedActiveRegistrations = useMemo(() => {
+    const start = (cardsPage - 1) * cardsPageSize;
+    return filteredActiveRegistrations.slice(start, start + cardsPageSize);
+  }, [filteredActiveRegistrations, cardsPage, cardsPageSize]);
+
+  // Table View Pagination & Filter
+  const [tablePage, setTablePage] = useState(1);
+  const [tablePageSize, setTablePageSize] = useState(50);
+
+  const filteredMasterRegistrations = useMemo(() => {
+    const q = debouncedCandidateSearch.toLowerCase().trim();
+    return baseRegistrations
+      .filter(r => isRegistrationActive(r))
+      .filter(r => {
+        if (!q) return true;
+        const student = r.studentId ? studentMapById.get(r.studentId) : (r.chestNumber ? studentMapByChest.get(Number(r.chestNumber)) : undefined);
+        const sName = (r.studentName || student?.name || r.groupName || '').toLowerCase();
+        const sAdm = (r.admissionNo || student?.admissionNo || '').toLowerCase();
+        const sChest = (r.chestNumber || student?.chestNumber || '').toString();
+
+        return (
+          r.programName.toLowerCase().includes(q) ||
+          sName.includes(q) ||
+          r.teamName?.toLowerCase().includes(q) ||
+          sAdm.includes(q) ||
+          sChest.includes(q)
+        );
+      });
+  }, [baseRegistrations, debouncedCandidateSearch, studentMapById, studentMapByChest]);
+
+  useEffect(() => {
+    setTablePage(1);
+  }, [debouncedCandidateSearch]);
+
+  const paginatedMasterRegistrations = useMemo(() => {
+    const start = (tablePage - 1) * tablePageSize;
+    return filteredMasterRegistrations.slice(start, start + tablePageSize);
+  }, [filteredMasterRegistrations, tablePage, tablePageSize]);
 
   // Candidate avatar initials helper
   const getInitials = (name?: string): string => {
@@ -870,12 +933,8 @@ export const RegistrationMaster: React.FC = () => {
                       </p>
                     </div>
                   ) : (
-                    filteredActiveRegistrations.map(reg => {
-                      const student = students.find(
-                        s =>
-                          s.id === reg.studentId ||
-                          (s.chestNumber && reg.chestNumber && Number(s.chestNumber) === Number(reg.chestNumber))
-                      );
+                    paginatedActiveRegistrations.map(reg => {
+                      const student = reg.studentId ? studentMapById.get(reg.studentId) : (reg.chestNumber ? studentMapByChest.get(Number(reg.chestNumber)) : undefined);
                       const displayName = reg.studentName || student?.name || reg.groupName || 'Candidate';
                       const initials = getInitials(displayName);
                       const isGroup = reg.programType === 'GROUP' || reg.programType === 'GENERAL';
@@ -958,6 +1017,17 @@ export const RegistrationMaster: React.FC = () => {
                     })
                   )}
                 </div>
+
+                {/* Candidate Grid Pagination */}
+                <Pagination
+                  currentPage={cardsPage}
+                  totalItems={filteredActiveRegistrations.length}
+                  pageSize={cardsPageSize}
+                  onPageChange={setCardsPage}
+                  onPageSizeChange={setCardsPageSize}
+                  itemLabel="candidates"
+                  pageSizeOptions={[12, 24, 48, 96]}
+                />
               </>
             ) : (
               <div className="py-24 text-center text-slate-400 text-xs">
@@ -1003,26 +1073,15 @@ export const RegistrationMaster: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {baseRegistrations
-                  .filter(r => isRegistrationActive(r))
-                  .filter(r => {
-                    const q = candidateSearch.toLowerCase().trim();
-                    if (!q) return true;
-                    const student = students.find(s => s.id === r.studentId || (s.chestNumber && r.chestNumber && Number(s.chestNumber) === Number(r.chestNumber)));
-                    const sName = (r.studentName || student?.name || r.groupName || '').toLowerCase();
-                    const sAdm = (r.admissionNo || student?.admissionNo || '').toLowerCase();
-                    const sChest = (r.chestNumber || student?.chestNumber || '').toString();
-
-                    return (
-                      r.programName.toLowerCase().includes(q) ||
-                      sName.includes(q) ||
-                      r.teamName?.toLowerCase().includes(q) ||
-                      sAdm.includes(q) ||
-                      sChest.includes(q)
-                    );
-                  })
-                  .map(reg => {
-                    const student = students.find(s => s.id === reg.studentId || (s.chestNumber && reg.chestNumber && Number(s.chestNumber) === Number(reg.chestNumber)));
+                {paginatedMasterRegistrations.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-slate-400 font-medium">
+                      No registrations match your search criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedMasterRegistrations.map(reg => {
+                    const student = reg.studentId ? studentMapById.get(reg.studentId) : (reg.chestNumber ? studentMapByChest.get(Number(reg.chestNumber)) : undefined);
                     const displayName = reg.studentName || student?.name || reg.groupName || 'Candidate';
                     const matchedTeam = teams.find(t => isTeamMatch(t, reg));
                     const displayTeamName = reg.teamName || matchedTeam?.name || 'House';
@@ -1065,10 +1124,22 @@ export const RegistrationMaster: React.FC = () => {
                         </td>
                       </tr>
                     );
-                  })}
+                  })
+                )}
               </tbody>
             </table>
           </div>
+
+          {/* Master Table Pagination */}
+          <Pagination
+            currentPage={tablePage}
+            totalItems={filteredMasterRegistrations.length}
+            pageSize={tablePageSize}
+            onPageChange={setTablePage}
+            onPageSizeChange={setTablePageSize}
+            itemLabel="registrations"
+            pageSizeOptions={[25, 50, 100, 250]}
+          />
         </div>
       )}
 

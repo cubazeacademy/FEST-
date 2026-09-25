@@ -15,6 +15,8 @@ import {
 } from '../../utils/csvHelpers';
 import { CategoryBadge } from '../common/Badge';
 import { Modal } from '../common/Modal';
+import { Pagination } from '../common/Pagination';
+import { useDebounce } from '../../hooks/useDebounce';
 import {
   Search,
   UserPlus,
@@ -116,9 +118,11 @@ export const StudentManagement: React.FC = () => {
     });
   }, [classMappings]);
 
+  const debouncedSearchQuery = useDebounce(searchQuery, 250);
+
   const filteredStudents = useMemo(() => {
     return students.filter(student => {
-      const query = searchQuery.toLowerCase().trim();
+      const query = debouncedSearchQuery.toLowerCase().trim();
       const matchSearch =
         !query ||
         student.name.toLowerCase().includes(query) ||
@@ -137,7 +141,21 @@ export const StudentManagement: React.FC = () => {
 
       return matchSearch && matchTeam && matchCategory && matchClass && matchChest;
     });
-  }, [students, searchQuery, selectedTeamFilter, selectedCategoryFilter, selectedClassFilter, chestNoFilter]);
+  }, [students, debouncedSearchQuery, selectedTeamFilter, selectedCategoryFilter, selectedClassFilter, chestNoFilter]);
+
+  // Server-grade client pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+
+  // Reset page whenever search or filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearchQuery, selectedTeamFilter, selectedCategoryFilter, selectedClassFilter, chestNoFilter]);
+
+  const paginatedStudents = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredStudents.slice(start, start + pageSize);
+  }, [filteredStudents, currentPage, pageSize]);
 
   const openAddModal = () => {
     setFormError(null);
@@ -740,7 +758,7 @@ export const StudentManagement: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredStudents.map(st => {
+                paginatedStudents.map(st => {
                   const team = teams.find(t => t.id === st.teamId);
                   const isSelected = selectedStudentIds.has(st.id);
                   return (
@@ -849,6 +867,17 @@ export const StudentManagement: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Server-grade pagination */}
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredStudents.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+          itemLabel="students"
+          pageSizeOptions={[25, 50, 100, 250]}
+        />
       </div>
 
       {/* Floating Bulk Actions Bar */}

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useFestData } from '../../context/FestDataContext';
 import { useAuth } from '../../context/AuthContext';
 import { FestCategory, Program, Registration } from '../../types';
@@ -12,7 +12,9 @@ import {
   downloadIndividualRegTemplate,
   ParsedIndividualRegRow
 } from '../../utils/csvHelpers';
-import { isCategoryMatch, getStudentParticipationBreakdown } from '../../utils/validations';
+import { isCategoryMatch, getStudentParticipationBreakdown, getMultiStudentParticipationMap } from '../../utils/validations';
+import { useDebounce } from '../../hooks/useDebounce';
+import { Pagination } from '../common/Pagination';
 import {
   UserPlus,
   CheckCircle2,
@@ -498,16 +500,33 @@ export const IndividualRegistration: React.FC = () => {
 
   const isProgramRegistrationOpen = (settings.registrationOpen !== false) && (activeProgram?.registrationOpen !== false);
 
+  // Debounced search for ultra-responsive typing
+  const debouncedCandidateSearch = useDebounce(candidateSearch, 200);
+
+  // Single-pass O(1) participation map for all candidates
+  const studentParticipationMap = useMemo(() => {
+    return getMultiStudentParticipationMap(registrations);
+  }, [registrations]);
+
+  // Fast O(1) lookup map for candidates registered in the active program
+  const activeProgRegLookup = useMemo(() => {
+    const map = new Map<string, Registration>();
+    activeProgramRegistrations.forEach(r => {
+      if (r.studentId) map.set(r.studentId, r);
+      if (r.chestNumber) map.set(`chest_${r.chestNumber}`, r);
+      if (r.admissionNo) map.set(`adm_${r.admissionNo.toLowerCase()}`, r);
+    });
+    return map;
+  }, [activeProgramRegistrations]);
+
   // Filtered candidate list for Right Panel (strictly from this Leader's House for selected category)
   const filteredCandidates = useMemo(() => {
-    const q = candidateSearch.toLowerCase().trim();
+    const q = debouncedCandidateSearch.toLowerCase().trim();
     const list = eligibleTeamStudents.filter(s => {
-      const isReg = activeProgramRegistrations.some(
-        r =>
-          r.studentId === s.id ||
-          (s.chestNumber && r.chestNumber && Number(r.chestNumber) === Number(s.chestNumber)) ||
-          (s.admissionNo && r.admissionNo && r.admissionNo.toLowerCase() === s.admissionNo.toLowerCase())
-      );
+      const isReg =
+        activeProgRegLookup.has(s.id) ||
+        (s.chestNumber ? activeProgRegLookup.has(`chest_${s.chestNumber}`) : false) ||
+        (s.admissionNo ? activeProgRegLookup.has(`adm_${s.admissionNo.toLowerCase()}`) : false);
 
       // If registration is closed, STRICTLY show ONLY registered candidates
       if (!isProgramRegistrationOpen) {
@@ -529,17 +548,31 @@ export const IndividualRegistration: React.FC = () => {
 
     // Sort registered candidates to appear first
     return list.sort((a, b) => {
-      const aReg = activeProgramRegistrations.some(
-        r => r.studentId === a.id || (a.chestNumber && r.chestNumber && Number(r.chestNumber) === Number(a.chestNumber))
-      );
-      const bReg = activeProgramRegistrations.some(
-        r => r.studentId === b.id || (b.chestNumber && r.chestNumber && Number(r.chestNumber) === Number(b.chestNumber))
-      );
+      const aReg =
+        activeProgRegLookup.has(a.id) ||
+        (a.chestNumber ? activeProgRegLookup.has(`chest_${a.chestNumber}`) : false);
+      const bReg =
+        activeProgRegLookup.has(b.id) ||
+        (b.chestNumber ? activeProgRegLookup.has(`chest_${b.chestNumber}`) : false);
       if (aReg && !bReg) return -1;
       if (!aReg && bReg) return 1;
       return (Number(a.chestNumber) || 9999) - (Number(b.chestNumber) || 9999);
     });
-  }, [eligibleTeamStudents, candidateSearch, candidateFilterStatus, activeProgramRegistrations, isProgramRegistrationOpen]);
+  }, [eligibleTeamStudents, debouncedCandidateSearch, candidateFilterStatus, activeProgRegLookup, isProgramRegistrationOpen]);
+
+  // Pagination state
+  const [candidatePage, setCandidatePage] = useState(1);
+  const [candidatePageSize, setCandidatePageSize] = useState(24);
+
+  // Reset page on filter changes
+  useEffect(() => {
+    setCandidatePage(1);
+  }, [selectedProgramId, selectedCategory, debouncedCandidateSearch, candidateFilterStatus]);
+
+  const paginatedCandidates = useMemo(() => {
+    const start = (candidatePage - 1) * candidatePageSize;
+    return filteredCandidates.slice(start, start + candidatePageSize);
+  }, [filteredCandidates, candidatePage, candidatePageSize]);
 
   // Register Handler
   const handleRegister = (studentId: string, studentName: string) => {
@@ -1287,15 +1320,18 @@ export const IndividualRegistration: React.FC = () => {
                       )}
                     </div>
                   ) : (
-                    filteredCandidates.map(student => {
-                      const regEntry = activeProgramRegistrations.find(
-                        r =>
-                          r.studentId === student.id ||
-                          (student.chestNumber && r.chestNumber && Number(r.chestNumber) === Number(student.chestNumber)) ||
-                          (student.admissionNo && r.admissionNo && r.admissionNo.toLowerCase() === student.admissionNo.toLowerCase())
-                      );
+                    paginatedCandidates.map(student => {
+                      const regEntry =
+                        activeProgRegLookup.get(student.id) ||
+                        (student.chestNumber ? activeProgRegLookup.get(`chest_${student.chestNumber}`) : undefined) ||
+                        (student.admissionNo ? activeProgRegLookup.get(`adm_${student.admissionNo.toLowerCase()}`) : undefined);
                       const isRegistered = !!regEntry;
-                      const breakdown = getStudentParticipationBreakdown(student.id, registrations);
+                      const breakdown = studentParticipationMap.get(student.id) || {
+                        totalIndividual: 0,
+                        stageCount: 0,
+                        nonStageCount: 0,
+                        sportsCount: 0
+                      };
                       const currentTotal = breakdown.totalIndividual;
                       const currentTypeCount = isCurrentStage
                         ? breakdown.stageCount
@@ -1418,6 +1454,18 @@ export const IndividualRegistration: React.FC = () => {
                 </div>
               )}
 
+              {/* Pagination for Cards View */}
+              {viewMode === 'CARDS' && filteredCandidates.length > 0 && (
+                <Pagination
+                  currentPage={candidatePage}
+                  totalItems={filteredCandidates.length}
+                  pageSize={candidatePageSize}
+                  onPageChange={setCandidatePage}
+                  onPageSizeChange={setCandidatePageSize}
+                  itemLabel="candidates"
+                />
+              )}
+
               {/* ========================================================= */}
               {/* CANDIDATES TABLE VIEW (DETAILED MATRIX)                   */}
               {/* ========================================================= */}
@@ -1455,15 +1503,18 @@ export const IndividualRegistration: React.FC = () => {
                             </td>
                           </tr>
                         ) : (
-                          filteredCandidates.map(student => {
-                            const regEntry = activeProgramRegistrations.find(
-                              r =>
-                                r.studentId === student.id ||
-                                (student.chestNumber && r.chestNumber && Number(r.chestNumber) === Number(student.chestNumber)) ||
-                                (student.admissionNo && r.admissionNo && r.admissionNo.toLowerCase() === student.admissionNo.toLowerCase())
-                            );
+                          paginatedCandidates.map(student => {
+                            const regEntry =
+                              activeProgRegLookup.get(student.id) ||
+                              (student.chestNumber ? activeProgRegLookup.get(`chest_${student.chestNumber}`) : undefined) ||
+                              (student.admissionNo ? activeProgRegLookup.get(`adm_${student.admissionNo.toLowerCase()}`) : undefined);
                             const isRegistered = !!regEntry;
-                            const breakdown = getStudentParticipationBreakdown(student.id, registrations);
+                            const breakdown = studentParticipationMap.get(student.id) || {
+                              totalIndividual: 0,
+                              stageCount: 0,
+                              nonStageCount: 0,
+                              sportsCount: 0
+                            };
                             const currentTotal = breakdown.totalIndividual;
                             const currentTypeCount = isCurrentStage
                               ? breakdown.stageCount
@@ -1628,6 +1679,18 @@ export const IndividualRegistration: React.FC = () => {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Pagination for Table View */}
+                  {filteredCandidates.length > 0 && (
+                    <Pagination
+                      currentPage={candidatePage}
+                      totalItems={filteredCandidates.length}
+                      pageSize={candidatePageSize}
+                      onPageChange={setCandidatePage}
+                      onPageSizeChange={setCandidatePageSize}
+                      itemLabel="candidates"
+                    />
+                  )}
                 </div>
               )}
             </>

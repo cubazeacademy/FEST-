@@ -227,20 +227,29 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const isRemoteUpdatingRef = useRef(false);
   const isInitialLoadDoneRef = useRef(false);
 
-  // Sync to LocalStorage
+  // Debounced non-blocking Sync to LocalStorage
   useEffect(() => {
-    localStorage.setItem(STORAGE_PREFIX + 'settings', JSON.stringify(settings));
-    localStorage.setItem(STORAGE_PREFIX + 'teams', JSON.stringify(teams));
-    localStorage.setItem(STORAGE_PREFIX + 'students', JSON.stringify(students));
-    localStorage.setItem(STORAGE_PREFIX + 'categoryConfigs', JSON.stringify(categoryConfigs));
-    localStorage.setItem(STORAGE_PREFIX + 'classMappings', JSON.stringify(classMappings));
-    localStorage.setItem(STORAGE_PREFIX + 'programs', JSON.stringify(programs));
-    localStorage.setItem(STORAGE_PREFIX + 'registrations', JSON.stringify(registrations));
-    localStorage.setItem(STORAGE_PREFIX + 'results', JSON.stringify(results));
-    localStorage.setItem(STORAGE_PREFIX + 'scoringConfigs', JSON.stringify(scoringConfigs));
-    localStorage.setItem(STORAGE_PREFIX + 'gradeConfigs', JSON.stringify(gradeConfigs));
-    localStorage.setItem(STORAGE_PREFIX + 'positionConfigs', JSON.stringify(positionConfigs));
-    localStorage.setItem(STORAGE_PREFIX + 'auditLogs', JSON.stringify(auditLogs));
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(STORAGE_PREFIX + 'settings', JSON.stringify(settings));
+        localStorage.setItem(STORAGE_PREFIX + 'teams', JSON.stringify(teams));
+        localStorage.setItem(STORAGE_PREFIX + 'students', JSON.stringify(students));
+        localStorage.setItem(STORAGE_PREFIX + 'categoryConfigs', JSON.stringify(categoryConfigs));
+        localStorage.setItem(STORAGE_PREFIX + 'classMappings', JSON.stringify(classMappings));
+        localStorage.setItem(STORAGE_PREFIX + 'programs', JSON.stringify(programs));
+        localStorage.setItem(STORAGE_PREFIX + 'registrations', JSON.stringify(registrations));
+        localStorage.setItem(STORAGE_PREFIX + 'results', JSON.stringify(results));
+        localStorage.setItem(STORAGE_PREFIX + 'scoringConfigs', JSON.stringify(scoringConfigs));
+        localStorage.setItem(STORAGE_PREFIX + 'gradeConfigs', JSON.stringify(gradeConfigs));
+        localStorage.setItem(STORAGE_PREFIX + 'positionConfigs', JSON.stringify(positionConfigs));
+        localStorage.setItem(STORAGE_PREFIX + 'auditLogs', JSON.stringify(auditLogs.slice(0, 50)));
+      } catch (e) {
+        // Silently handle quota exceeded if data exceeds browser localStorage limit
+        console.warn('LocalStorage save deferred or full', e);
+      }
+    }, 1200);
+
+    return () => clearTimeout(timer);
   }, [settings, teams, students, categoryConfigs, classMappings, programs, registrations, results, scoringConfigs, gradeConfigs, positionConfigs, auditLogs]);
 
   // Debounced auto-mirror to fest_state snapshot document with client ID tracking
@@ -262,7 +271,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         scoringConfigs,
         auditLogs: auditLogs.slice(0, 50)
       }).catch(console.error);
-    }, 700);
+    }, 1500);
 
     return () => clearTimeout(timer);
   }, [settings, teams, students, categoryConfigs, classMappings, programs, registrations, results, scoringConfigs, auditLogs]);

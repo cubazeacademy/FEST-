@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { useFestData } from '../../context/FestDataContext';
 import { useAuth } from '../../context/AuthContext';
 import { Modal } from '../common/Modal';
+import { useDebounce } from '../../hooks/useDebounce';
 import { FestCategory, Program, Registration } from '../../types';
 import {
   generateSampleGroupRegCSV,
@@ -206,6 +207,7 @@ export const GroupRegistration: React.FC = () => {
 
   // Filter State (Left Panel)
   const [programSearch, setProgramSearch] = useState('');
+  const debouncedProgramSearch = useDebounce(programSearch, 200);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'NOT_ENTERED' | 'ENTERED' | 'ARTS' | 'SPORTS'>('ALL');
 
   // Set of all valid team identifiers for current user/team
@@ -293,7 +295,7 @@ export const GroupRegistration: React.FC = () => {
   const categoryGroupPrograms = useMemo(() => {
     return allCategoryGroupPrograms.filter(p => {
       // Search Query
-      const q = programSearch.toLowerCase().trim();
+      const q = debouncedProgramSearch.toLowerCase().trim();
       const matchQ =
         !q ||
         p.name.toLowerCase().includes(q) ||
@@ -319,7 +321,7 @@ export const GroupRegistration: React.FC = () => {
 
       return true;
     });
-  }, [allCategoryGroupPrograms, programSearch, statusFilter, registrations, isProgramRegistration, isTeamRegistration]);
+  }, [allCategoryGroupPrograms, debouncedProgramSearch, statusFilter, registrations, isProgramRegistration, isTeamRegistration]);
 
   // Active Selected Program ID
   const [selectedProgramId, setSelectedProgramId] = useState<string>(() => {
@@ -388,6 +390,7 @@ export const GroupRegistration: React.FC = () => {
   const [activeSlotIndex, setActiveSlotIndex] = useState<number | null>(null);
   const [isStudentPickerOpen, setIsStudentPickerOpen] = useState(false);
   const [studentSearchQuery, setStudentSearchQuery] = useState('');
+  const debouncedStudentSearchQuery = useDebounce(studentSearchQuery, 150);
 
   // Notification feedback
   const [feedback, setFeedback] = useState<{ success: boolean; msg: string } | null>(null);
@@ -399,6 +402,7 @@ export const GroupRegistration: React.FC = () => {
   const [editActiveSlotIndex, setEditActiveSlotIndex] = useState<number | null>(null);
   const [isEditStudentPickerOpen, setIsEditStudentPickerOpen] = useState(false);
   const [editStudentSearchQuery, setEditStudentSearchQuery] = useState('');
+  const debouncedEditStudentSearchQuery = useDebounce(editStudentSearchQuery, 150);
   const [editFeedback, setEditFeedback] = useState<string | null>(null);
 
   // Keep slots array synced with active program selection without resetting candidate selections on re-renders
@@ -498,7 +502,7 @@ export const GroupRegistration: React.FC = () => {
 
   // Filtered students for picker modal (New Group)
   const filteredPickerStudents = useMemo(() => {
-    const q = studentSearchQuery.toLowerCase().trim();
+    const q = debouncedStudentSearchQuery.toLowerCase().trim();
     return eligibleTeamStudents.filter(s => {
       if (!q) return true;
       return (
@@ -509,11 +513,11 @@ export const GroupRegistration: React.FC = () => {
         (s.category && s.category.toLowerCase().includes(q))
       );
     });
-  }, [eligibleTeamStudents, studentSearchQuery]);
+  }, [eligibleTeamStudents, debouncedStudentSearchQuery]);
 
   // Filtered students for picker modal (Edit Group)
   const filteredEditPickerStudents = useMemo(() => {
-    const q = editStudentSearchQuery.toLowerCase().trim();
+    const q = debouncedEditStudentSearchQuery.toLowerCase().trim();
     return eligibleTeamStudents.filter(s => {
       if (!q) return true;
       return (
@@ -524,7 +528,7 @@ export const GroupRegistration: React.FC = () => {
         (s.category && s.category.toLowerCase().includes(q))
       );
     });
-  }, [eligibleTeamStudents, editStudentSearchQuery]);
+  }, [eligibleTeamStudents, debouncedEditStudentSearchQuery]);
 
   // Open slot picker for New Group
   const handleOpenSlotPicker = (slotIndex: number) => {

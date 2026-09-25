@@ -1,10 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useFestData } from '../../context/FestDataContext';
 import { useAuth } from '../../context/AuthContext';
-import { Student, FestCategory } from '../../types';
+import { Student, FestCategory, Program } from '../../types';
 import { triggerExcelDownload, triggerFileDownload } from '../../utils/csvHelpers';
 import { SectionBadge, CategoryBadge, PositionBadge, GradeBadge } from '../common/Badge';
 import { Modal } from '../common/Modal';
+import { Pagination } from '../common/Pagination';
+import { useDebounce } from '../../hooks/useDebounce';
 import {
   Users,
   Search,
@@ -106,6 +108,7 @@ export const HouseStudentRoster: React.FC<HouseStudentRosterProps> = ({
 
   // State Filters
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebounce(searchQuery, 200);
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [participationFilter, setParticipationFilter] = useState<'ALL' | 'WITH_POINTS' | 'REGISTERED' | 'NO_REG'>('ALL');
   const [sortBy, setSortBy] = useState<'POINTS_DESC' | 'CHEST_ASC' | 'NAME_ASC' | 'EVENTS_DESC'>('POINTS_DESC');
@@ -122,66 +125,74 @@ export const HouseStudentRoster: React.FC<HouseStudentRosterProps> = ({
     return map;
   }, [studentScores]);
 
-  // Registered programs mapping per student
+  // High performance O(N+M) registered programs mapping per student
   const studentProgramsMap = useMemo(() => {
     const map = new Map<string, any[]>();
+    const progMap = new Map<string, Program>();
+    programs.forEach(p => {
+      progMap.set(p.id, p);
+      if (p.code) progMap.set(p.code, p);
+    });
 
-    houseStudents.forEach(stu => {
-      // Individual registrations
-      const indivRegs = houseRegistrations.filter(
-        r => r.studentId === stu.id && r.status !== 'WITHDRAWN'
-      );
+    const pubResultMap = new Map<string, any>();
+    results.forEach(r => {
+      if (r.status === 'PUBLISHED') {
+        pubResultMap.set(r.programId, r);
+      }
+    });
 
-      // Group registrations
-      const grpRegs = houseRegistrations.filter(
-        r =>
-          r.status !== 'WITHDRAWN' &&
-          r.groupMembers?.some(m => m.studentId === stu.id)
-      );
+    houseRegistrations.forEach(reg => {
+      if (reg.status === 'WITHDRAWN') return;
+      const prog = progMap.get(reg.programId) || ((reg as any).programCode ? progMap.get((reg as any).programCode) : undefined);
+      const sec = prog?.section || reg.section;
+      if (!isArtsEnabled && sec === 'ARTS') return;
+      if (!isSportsEnabled && sec === 'SPORTS') return;
 
-      const allStuRegs = [...indivRegs, ...grpRegs].filter(reg => {
-        const prog = programs.find(p => p.id === reg.programId);
-        const sec = prog?.section || reg.section;
-        if (!isArtsEnabled && sec === 'ARTS') return false;
-        if (!isSportsEnabled && sec === 'SPORTS') return false;
-        return true;
-      });
+      const pubResult = pubResultMap.get(reg.programId);
 
-      const progDetails = allStuRegs.map(reg => {
-        const prog = programs.find(p => p.id === reg.programId);
-        const pubResult = results.find(
-          r => r.programId === reg.programId && r.status === 'PUBLISHED'
-        );
-
+      const addDetailForStudent = (stuId: string) => {
         let resultEntry = undefined;
         if (pubResult) {
           resultEntry = pubResult.entries.find(
-            e =>
-              e.studentId === stu.id ||
+            (e: any) =>
+              e.studentId === stuId ||
               e.registrationId === reg.id ||
-              e.groupMembers?.some(m => m.studentId === stu.id)
+              e.groupMembers?.some((m: any) => m.studentId === stuId)
           );
         }
 
-        return {
+        const detail = {
           registration: reg,
           program: prog,
           result: pubResult,
           entry: resultEntry
         };
-      });
 
-      map.set(stu.id, progDetails);
+        const arr = map.get(stuId) || [];
+        arr.push(detail);
+        map.set(stuId, arr);
+      };
+
+      if (reg.studentId) {
+        addDetailForStudent(reg.studentId);
+      }
+      if (reg.groupMembers) {
+        reg.groupMembers.forEach(m => {
+          if (m.studentId) {
+            addDetailForStudent(m.studentId);
+          }
+        });
+      }
     });
 
     return map;
-  }, [houseStudents, houseRegistrations, programs, results, isArtsEnabled, isSportsEnabled]);
+  }, [houseRegistrations, programs, results, isArtsEnabled, isSportsEnabled]);
 
   // Filtered & Sorted Students
   const filteredStudents = useMemo(() => {
     return houseStudents
       .filter(stu => {
-        const q = searchQuery.toLowerCase().trim();
+        const q = debouncedSearchQuery.toLowerCase().trim();
         const score = studentScoreMap.get(stu.id);
         const stuPrograms = studentProgramsMap.get(stu.id) || [];
 
@@ -230,7 +241,20 @@ export const HouseStudentRoster: React.FC<HouseStudentRosterProps> = ({
         }
         return 0;
       });
-  }, [houseStudents, searchQuery, selectedCategory, participationFilter, sortBy, studentScoreMap, studentProgramsMap]);
+  }, [houseStudents, debouncedSearchQuery, selectedCategory, participationFilter, sortBy, studentScoreMap, studentProgramsMap]);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(24);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearchQuery, selectedCategory, participationFilter, sortBy]);
+
+  const paginatedStudents = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredStudents.slice(start, start + pageSize);
+  }, [filteredStudents, currentPage, pageSize]);
 
   // House Totals
   const houseTotals = useMemo(() => {
@@ -547,184 +571,197 @@ export const HouseStudentRoster: React.FC<HouseStudentRosterProps> = ({
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
-            {filteredStudents.map(stu => {
-              const score = studentScoreMap.get(stu.id);
-              const progs = studentProgramsMap.get(stu.id) || [];
-              const artsPts = score?.artsIndividualPoints || 0;
-              const sportsPts = score?.sportsIndividualPoints || 0;
-              const totalPts = artsPts + sportsPts;
-              const firsts = score?.firstCount || 0;
-              const seconds = score?.secondCount || 0;
-              const thirds = score?.thirdCount || 0;
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
+              {paginatedStudents.map(stu => {
+                const score = studentScoreMap.get(stu.id);
+                const progs = studentProgramsMap.get(stu.id) || [];
+                const artsPts = score?.artsIndividualPoints || 0;
+                const sportsPts = score?.sportsIndividualPoints || 0;
+                const totalPts = artsPts + sportsPts;
+                const firsts = score?.firstCount || 0;
+                const seconds = score?.secondCount || 0;
+                const thirds = score?.thirdCount || 0;
 
-              return (
-                <div
-                  key={stu.id}
-                  className="p-5 rounded-3xl bg-white border border-slate-200/90 hover:border-slate-300 shadow-xs hover:shadow-md transition-all flex flex-col justify-between group"
-                >
-                  <div>
-                    {/* Top Row: Chest No & Category */}
-                    <div className="flex items-center justify-between gap-2 mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-1 rounded-xl bg-slate-900 text-white font-mono font-bold text-xs shadow-xs">
-                          #{stu.chestNumber || 'NO CHEST'}
-                        </span>
-                        <CategoryBadge category={stu.category} />
-                      </div>
-
-                      <span className="text-[11px] font-bold text-slate-500 font-mono">
-                        Adm: {stu.admissionNo}
-                      </span>
-                    </div>
-
-                    {/* Candidate Name & Class */}
-                    <h4 className="text-base font-bold text-slate-900 transition-colors">
-                      {stu.name}
-                    </h4>
-                    <p className="text-xs text-slate-500 font-medium mt-0.5">
-                      {stu.classNumber ? `Class ${stu.classNumber}` : 'Class Unassigned'} • {stu.gender || 'Student'}
-                    </p>
-
-                    {/* Points & Medals Strip */}
-                    <div className="mt-4 p-3 rounded-2xl bg-slate-50/80 border border-slate-100 flex items-center justify-between">
-                      <div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                          Total Score
-                        </span>
-                        <span className="text-lg font-black font-mono" style={{ color: teamColor }}>
-                          {totalPts} <span className="text-xs font-semibold text-slate-500">pts</span>
-                        </span>
-                      </div>
-
-                      {isArtsEnabled && isSportsEnabled && (
-                        <div className="text-right">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                            Arts / Sports
+                return (
+                  <div
+                    key={stu.id}
+                    className="p-5 rounded-3xl bg-white border border-slate-200/90 hover:border-slate-300 shadow-xs hover:shadow-md transition-all flex flex-col justify-between group"
+                  >
+                    <div>
+                      {/* Top Row: Chest No & Category */}
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-1 rounded-xl bg-slate-900 text-white font-mono font-bold text-xs shadow-xs">
+                            #{stu.chestNumber || 'NO CHEST'}
                           </span>
-                          <div className="flex items-center gap-1.5 font-mono text-xs font-bold mt-0.5">
-                            <span className="text-slate-800">{artsPts}A</span>
-                            <span className="text-slate-300">|</span>
-                            <span className="text-slate-800">{sportsPts}S</span>
+                          <CategoryBadge category={stu.category} />
+                        </div>
+
+                        <span className="text-[11px] font-bold text-slate-500 font-mono">
+                          Adm: {stu.admissionNo}
+                        </span>
+                      </div>
+
+                      {/* Candidate Name & Class */}
+                      <h4 className="text-base font-bold text-slate-900 transition-colors">
+                        {stu.name}
+                      </h4>
+                      <p className="text-xs text-slate-500 font-medium mt-0.5">
+                        {stu.classNumber ? `Class ${stu.classNumber}` : 'Class Unassigned'} • {stu.gender || 'Student'}
+                      </p>
+
+                      {/* Points & Medals Strip */}
+                      <div className="mt-4 p-3 rounded-2xl bg-slate-50/80 border border-slate-100 flex items-center justify-between">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                            Total Score
+                          </span>
+                          <span className="text-lg font-black font-mono" style={{ color: teamColor }}>
+                            {totalPts} <span className="text-xs font-semibold text-slate-500">pts</span>
+                          </span>
+                        </div>
+
+                        {isArtsEnabled && isSportsEnabled && (
+                          <div className="text-right">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                              Arts / Sports
+                            </span>
+                            <div className="flex items-center gap-1.5 font-mono text-xs font-bold mt-0.5">
+                              <span className="text-slate-800">{artsPts}A</span>
+                              <span className="text-slate-300">|</span>
+                              <span className="text-slate-800">{sportsPts}S</span>
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {isArtsEnabled && !isSportsEnabled && (
-                        <div className="text-right">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                            Arts Score
-                          </span>
-                          <span className="text-slate-800 font-mono text-xs font-bold mt-0.5 block">
-                            {artsPts} pts
-                          </span>
-                        </div>
-                      )}
+                        {isArtsEnabled && !isSportsEnabled && (
+                          <div className="text-right">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                              Arts Score
+                            </span>
+                            <span className="text-slate-800 font-mono text-xs font-bold mt-0.5 block">
+                              {artsPts} pts
+                            </span>
+                          </div>
+                        )}
 
-                      {!isArtsEnabled && isSportsEnabled && (
-                        <div className="text-right">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                            Sports Score
-                          </span>
-                          <span className="text-slate-800 font-mono text-xs font-bold mt-0.5 block">
-                            {sportsPts} pts
-                          </span>
-                        </div>
-                      )}
+                        {!isArtsEnabled && isSportsEnabled && (
+                          <div className="text-right">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                              Sports Score
+                            </span>
+                            <span className="text-slate-800 font-mono text-xs font-bold mt-0.5 block">
+                              {sportsPts} pts
+                            </span>
+                          </div>
+                        )}
 
-                      {(firsts > 0 || seconds > 0 || thirds > 0) && (
-                        <div className="text-right border-l border-slate-200 pl-3">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                            Medals
-                          </span>
-                          <span className="text-xs font-bold text-slate-700">
-                            {firsts > 0 && `🥇${firsts}`} {seconds > 0 && `🥈${seconds}`} {thirds > 0 && `🥉${thirds}`}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Registered Programs Quick Summary */}
-                    <div className="mt-3.5 space-y-1.5">
-                      <div className="flex items-center justify-between text-xs font-bold text-slate-700">
-                        <span className="flex items-center gap-1">
-                          <CalendarCheck className="w-3.5 h-3.5" style={{ color: teamColor }} />
-                          Registered Events ({progs.length})
-                        </span>
+                        {(firsts > 0 || seconds > 0 || thirds > 0) && (
+                          <div className="text-right border-l border-slate-200 pl-3">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                              Medals
+                            </span>
+                            <span className="text-xs font-bold text-slate-700">
+                              {firsts > 0 && `🥇${firsts}`} {seconds > 0 && `🥈${seconds}`} {thirds > 0 && `🥉${thirds}`}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
-                      {progs.length === 0 ? (
-                        <p className="text-xs text-slate-400 italic py-1 font-normal">
-                          No events registered yet.
-                        </p>
-                      ) : (
-                        <div className="space-y-1 max-h-24 overflow-y-auto pr-1">
-                          {progs.slice(0, 3).map((item, pIdx) => {
-                            const prog = item.program;
-                            const resEntry = item.entry;
-                            return (
-                              <div
-                                key={pIdx}
-                                className="px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200/60 text-xs flex items-center justify-between gap-1"
-                              >
-                                <span className="font-medium text-slate-800 truncate">
-                                  {prog ? prog.name : 'Registered Event'}
-                                </span>
-                                {resEntry && resEntry.position ? (
-                                  <span
-                                    className="font-bold text-[10px] px-1.5 py-0.5 rounded border shrink-0"
-                                    style={{
-                                      backgroundColor: `${teamColor}12`,
-                                      borderColor: `${teamColor}30`,
-                                      color: teamColor
-                                    }}
-                                  >
-                                    {resEntry.position === 1 ? '🥇 1st' : resEntry.position === 2 ? '🥈 2nd' : '🥉 3rd'} ({resEntry.points}pts)
-                                  </span>
-                                ) : (
-                                  <span className="text-[10px] text-slate-400 shrink-0">
-                                    {prog?.section}
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })}
-                          {progs.length > 3 && (
-                            <p className="text-[11px] font-bold text-right pt-0.5" style={{ color: teamColor }}>
-                              +{progs.length - 3} more event(s)
-                            </p>
-                          )}
+                      {/* Registered Programs Quick Summary */}
+                      <div className="mt-3.5 space-y-1.5">
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                          <span className="flex items-center gap-1">
+                            <CalendarCheck className="w-3.5 h-3.5" style={{ color: teamColor }} />
+                            Registered Events ({progs.length})
+                          </span>
                         </div>
-                      )}
+
+                        {progs.length === 0 ? (
+                          <p className="text-xs text-slate-400 italic py-1 font-normal">
+                            No events registered yet.
+                          </p>
+                        ) : (
+                          <div className="space-y-1 max-h-24 overflow-y-auto pr-1">
+                            {progs.slice(0, 3).map((item, pIdx) => {
+                              const prog = item.program;
+                              const resEntry = item.entry;
+                              return (
+                                <div
+                                  key={pIdx}
+                                  className="px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200/60 text-xs flex items-center justify-between gap-1"
+                                >
+                                  <span className="font-medium text-slate-800 truncate">
+                                    {prog ? prog.name : 'Registered Event'}
+                                  </span>
+                                  {resEntry && resEntry.position ? (
+                                    <span
+                                      className="font-bold text-[10px] px-1.5 py-0.5 rounded border shrink-0"
+                                      style={{
+                                        backgroundColor: `${teamColor}12`,
+                                        borderColor: `${teamColor}30`,
+                                        color: teamColor
+                                      }}
+                                    >
+                                      {resEntry.position === 1 ? '🥇 1st' : resEntry.position === 2 ? '🥈 2nd' : '🥉 3rd'} ({resEntry.points}pts)
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400 shrink-0">
+                                      {prog?.section}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                            {progs.length > 3 && (
+                              <p className="text-[11px] font-bold text-right pt-0.5" style={{ color: teamColor }}>
+                                +{progs.length - 3} more event(s)
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => handleRegisterNew(stu.id)}
+                        disabled={!settings.registrationOpen}
+                        className="text-xs font-bold text-slate-600 hover:text-slate-900 disabled:opacity-40 transition-colors flex items-center gap-1 cursor-pointer py-1"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" /> + Register Event
+                      </button>
+
+                      <button
+                        onClick={() => setInspectedStudent(stu)}
+                        className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs border"
+                        style={{
+                          backgroundColor: `${teamColor}12`,
+                          borderColor: `${teamColor}30`,
+                          color: teamColor
+                        }}
+                      >
+                        Full Details <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
+                );
+              })}
+            </div>
 
-                  {/* Actions */}
-                  <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-between gap-2">
-                    <button
-                      onClick={() => handleRegisterNew(stu.id)}
-                      disabled={!settings.registrationOpen}
-                      className="text-xs font-bold text-slate-600 hover:text-slate-900 disabled:opacity-40 transition-colors flex items-center gap-1 cursor-pointer py-1"
-                    >
-                      <UserPlus className="w-3.5 h-3.5" /> + Register Event
-                    </button>
-
-                    <button
-                      onClick={() => setInspectedStudent(stu)}
-                      className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs border"
-                      style={{
-                        backgroundColor: `${teamColor}12`,
-                        borderColor: `${teamColor}30`,
-                        color: teamColor
-                      }}
-                    >
-                      Full Details <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+            {/* Pagination Controls */}
+            <Pagination
+              currentPage={currentPage}
+              totalItems={filteredStudents.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+              itemLabel="candidates"
+              pageSizeOptions={[12, 24, 48, 96]}
+            />
+          </>
         )}
       </div>
 
