@@ -235,6 +235,23 @@ export function validateIndividualRegistration(
     }
   }
 
+  // 4. Team Quota Check: Candidates Per Team (Independent quota per house)
+  const candidatesPerTeam = program.maxParticipants || 1;
+  const existingTeamCount = registrations.filter(
+    r =>
+      r.programId === program.id &&
+      r.teamId === student.teamId &&
+      r.programType === 'INDIVIDUAL' &&
+      r.status === 'CONFIRMED'
+  ).length;
+
+  if (existingTeamCount >= candidatesPerTeam) {
+    return {
+      valid: false,
+      error: `Maximum ${candidatesPerTeam} candidate${candidatesPerTeam > 1 ? 's are' : ' is'} allowed from your team for this program.`
+    };
+  }
+
   return { valid: true };
 }
 

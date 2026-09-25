@@ -334,6 +334,12 @@ export const IndividualRegistration: React.FC = () => {
     );
   }, [registrations, activeProgram, currentUser.teamId, myTeam]);
 
+  // Quota for active program for this house (Candidates Per Team)
+  const allowedCandidatesPerTeam = activeProgram?.maxParticipants || 1;
+  const registeredTeamCandidates = activeProgramRegistrations.length;
+  const remainingTeamCandidates = Math.max(0, allowedCandidatesPerTeam - registeredTeamCandidates);
+  const isTeamQuotaFull = registeredTeamCandidates >= allowedCandidatesPerTeam;
+
   // Helper to count student's confirmed individual registrations
   const getStudentIndividualCount = (studentId: string) => {
     return registrations.filter(
@@ -812,14 +818,17 @@ export const IndividualRegistration: React.FC = () => {
                       <span>•</span>
                       <span className="font-bold text-slate-800 text-[11px]">{prog.category}</span>
                       <span>•</span>
-                      <span className="text-[11px] text-slate-500">
-                        {regCount} registered
+                      <span className="text-[11px] font-mono font-bold text-slate-700">
+                        {regCount}/{prog.maxParticipants || 1} candidates
                       </span>
                     </div>
 
                     {/* Row 3: Manual Result / Venue Subtitle */}
-                    <div className="mt-2 text-xs text-slate-400 font-medium">
-                      {prog.stageLocation ? `Venue: ${prog.stageLocation}` : 'Manual Result'}
+                    <div className="mt-2 text-xs text-slate-400 font-medium flex items-center justify-between">
+                      <span>{prog.stageLocation ? `Venue: ${prog.stageLocation}` : 'Manual Result'}</span>
+                      <span className="text-[10px] font-bold text-slate-400">
+                        Quota: {prog.maxParticipants || 1}/team
+                      </span>
                     </div>
                   </div>
                 );
@@ -893,6 +902,60 @@ export const IndividualRegistration: React.FC = () => {
                     <span>|</span>
                     <span>Sports: {currentCategoryConfig?.maxSportsPrograms ?? maxIndividualLimit}</span>
                   </div>
+                </div>
+              </div>
+
+              {/* Team Program Quota Status Banner */}
+              <div
+                className={`p-4 rounded-2xl border transition-all ${
+                  isTeamQuotaFull
+                    ? 'bg-amber-50/80 border-amber-300 shadow-2xs'
+                    : 'bg-slate-50/90 border-slate-200/90 shadow-2xs'
+                }`}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+                        {myTeam?.name ? `${myTeam.name.toUpperCase()} HOUSE` : 'YOUR TEAM'} CANDIDATE QUOTA
+                      </span>
+                      {isTeamQuotaFull ? (
+                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900 border border-amber-300">
+                          Quota Reached
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          {remainingTeamCandidates} Slot{remainingTeamCandidates > 1 ? 's' : ''} Remaining
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-3 sm:gap-5 mt-2 flex-wrap font-mono text-xs">
+                      <div>
+                        <span className="text-slate-500 font-medium">Allowed Candidates: </span>
+                        <strong className="text-slate-900 font-black text-sm">{allowedCandidatesPerTeam}</strong>
+                      </div>
+                      <span className="text-slate-300">•</span>
+                      <div>
+                        <span className="text-slate-500 font-medium">Registered: </span>
+                        <strong className="text-emerald-700 font-black text-sm">{registeredTeamCandidates}</strong>
+                      </div>
+                      <span className="text-slate-300">•</span>
+                      <div>
+                        <span className="text-slate-500 font-medium">Remaining: </span>
+                        <strong className={`font-black text-sm ${remainingTeamCandidates > 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
+                          {remainingTeamCandidates}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {isTeamQuotaFull && (
+                    <div className="text-xs font-bold text-amber-900 bg-amber-100/90 border border-amber-300 px-3.5 py-2 rounded-xl flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                      <span>Maximum {allowedCandidatesPerTeam} candidate{allowedCandidatesPerTeam > 1 ? 's are' : ' is'} allowed from your team for this program.</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1063,7 +1126,7 @@ export const IndividualRegistration: React.FC = () => {
                               className={`transition-colors ${
                                 isRegistered
                                   ? 'bg-emerald-50/40 hover:bg-emerald-50/70'
-                                  : isQuotaReached
+                                  : isQuotaReached || isTeamQuotaFull
                                   ? 'bg-amber-50/30 hover:bg-amber-50/50'
                                   : 'hover:bg-slate-50/80'
                               }`}
@@ -1167,19 +1230,31 @@ export const IndividualRegistration: React.FC = () => {
                                   <button
                                     type="button"
                                     onClick={() => handleRegister(student.id, student.name)}
-                                    disabled={isQuotaReached || !settings.registrationOpen}
-                                    style={{ backgroundColor: teamColor, boxShadow: `0 3px 10px 0 ${teamColor}35` }}
-                                    className="px-3.5 py-1.5 rounded-xl hover:opacity-90 disabled:opacity-40 disabled:hover:opacity-40 text-white font-bold text-xs transition-all flex items-center gap-1.5 ml-auto cursor-pointer"
+                                    disabled={isQuotaReached || isTeamQuotaFull || !settings.registrationOpen}
+                                    style={
+                                      isTeamQuotaFull || isQuotaReached || !settings.registrationOpen
+                                        ? undefined
+                                        : { backgroundColor: teamColor, boxShadow: `0 3px 10px 0 ${teamColor}35` }
+                                    }
+                                    className={`px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ml-auto cursor-pointer ${
+                                      isTeamQuotaFull || isQuotaReached || !settings.registrationOpen
+                                        ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
+                                        : 'text-white hover:opacity-90'
+                                    }`}
                                     title={
-                                      isTotalQuotaReached
+                                      isTeamQuotaFull
+                                        ? `Maximum ${allowedCandidatesPerTeam} candidate(s) are allowed from your team for this program.`
+                                        : isTotalQuotaReached
                                         ? 'Candidate has reached the overall maximum limit'
                                         : isTypeQuotaReached
                                         ? `Candidate has reached the maximum ${activeProgramTypeLabel} program limit`
+                                        : !settings.registrationOpen
+                                        ? 'Registration is currently closed'
                                         : undefined
                                     }
                                   >
                                     <UserPlus className="w-3.5 h-3.5" />
-                                    Register
+                                    {isTeamQuotaFull ? 'Quota Full' : 'Register'}
                                   </button>
                                 )}
                               </td>

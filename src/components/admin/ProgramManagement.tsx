@@ -35,7 +35,8 @@ import {
   X,
   AlertTriangle,
   Layers,
-  ShieldAlert
+  ShieldAlert,
+  Users
 } from 'lucide-react';
 
 export const ProgramManagement: React.FC = () => {
@@ -740,22 +741,33 @@ export const ProgramManagement: React.FC = () => {
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400 text-[11px]">Participants:</span>
-                    <span className="font-mono text-slate-800 font-bold text-[11px]">
-                      {prog.programType === 'INDIVIDUAL'
-                        ? '1 student'
-                        : prog.programType === 'GROUP'
-                        ? `${prog.requiredMembersPerGroup ?? prog.minParticipants ?? 3} members`
-                        : `${prog.minParticipants}-${prog.maxParticipants} students`}
-                    </span>
-                  </div>
-
-                  {prog.programType === 'GROUP' && (
+                  {prog.programType === 'INDIVIDUAL' ? (
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-400 text-[11px]">Max Groups:</span>
-                      <span className="font-mono text-rose-600 bg-rose-50 px-1.5 py-0.2 rounded font-bold text-[10px]">
-                        {prog.maxGroupsPerTeam ?? 2} groups
+                      <span className="text-slate-400 text-[11px]">Candidates Per Team:</span>
+                      <span className="font-mono text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded font-bold text-[11px]">
+                        {prog.maxParticipants || 1} per house
+                      </span>
+                    </div>
+                  ) : prog.programType === 'GROUP' ? (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 text-[11px]">Members / Group:</span>
+                        <span className="font-mono text-slate-800 font-bold text-[11px]">
+                          {prog.requiredMembersPerGroup ?? prog.minParticipants ?? 3} members
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 text-[11px]">Max Groups:</span>
+                        <span className="font-mono text-rose-600 bg-rose-50 px-1.5 py-0.2 rounded font-bold text-[10px]">
+                          {prog.maxGroupsPerTeam ?? 2} groups / house
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 text-[11px]">Participants:</span>
+                      <span className="font-mono text-slate-800 font-bold text-[11px]">
+                        {prog.minParticipants}-{prog.maxParticipants} students
                       </span>
                     </div>
                   )}
@@ -1015,7 +1027,39 @@ export const ProgramManagement: React.FC = () => {
             </div>
           </div>
 
-          {formData.programType === 'GROUP' ? (
+          {formData.programType === 'INDIVIDUAL' ? (
+            <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-indigo-600" />
+                  Candidates Per Team (Quota per House) *
+                </label>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
+                  Per House Limit
+                </span>
+              </div>
+              <div className="mt-2 flex items-center gap-3">
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={formData.maxParticipants || 1}
+                  onChange={e => {
+                    const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                    setFormData({
+                      ...formData,
+                      maxParticipants: val,
+                      minParticipants: 1
+                    });
+                  }}
+                  className="w-28 px-3 py-1.5 rounded-xl bg-white border border-indigo-300 text-xs sm:text-sm text-slate-900 font-mono font-bold shadow-2xs focus:ring-2 focus:ring-indigo-400/20"
+                />
+                <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
+                  Maximum students that <strong>EACH TEAM</strong> can independently register for this individual event (e.g. 3 allows 3 from Phoenix, 3 from Blue, 3 from Green, etc.).
+                </p>
+              </div>
+            </div>
+          ) : formData.programType === 'GROUP' ? (
             <div className="p-3.5 rounded-2xl bg-rose-50/50 border border-rose-200/70 space-y-3">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold uppercase tracking-wider text-rose-800">

@@ -1231,6 +1231,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const newRegs: Registration[] = [];
     let importedCount = 0;
+    const batchTeamProgramCounts = new Map<string, number>();
 
     for (const ent of entries) {
       const student = students.find(s => s.id === ent.studentId);
@@ -1238,6 +1239,21 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (!student || !program) continue;
 
       const team = teams.find(t => t.id === student.teamId);
+      const teamId = student.teamId || '';
+      const pairKey = `${program.id}_${teamId}`;
+
+      // Enforce team candidate quota for individual programs
+      const maxAllowed = program.maxParticipants || 1;
+      const existingTeamCount = registrations.filter(
+        r => r.programId === program.id && r.teamId === teamId && r.programType === 'INDIVIDUAL' && r.status === 'CONFIRMED'
+      ).length;
+      const currentBatchCount = batchTeamProgramCounts.get(pairKey) || 0;
+
+      if (existingTeamCount + currentBatchCount >= maxAllowed) {
+        continue; // Skip entries exceeding team quota
+      }
+
+      batchTeamProgramCounts.set(pairKey, currentBatchCount + 1);
 
       const newReg: Registration = {
         id: 'reg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6) + '_' + importedCount,

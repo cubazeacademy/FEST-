@@ -531,7 +531,15 @@ export function validateProgramCSVRows(
   const catIdx = rawHeaders.findIndex(h => h === 'category');
   const progTypeIdx = rawHeaders.findIndex(h => h === 'programtype' || h === 'eventtype' || h === 'grouptype');
   const minIdx = rawHeaders.findIndex(h => h === 'minparticipants' || h === 'min');
-  const maxIdx = rawHeaders.findIndex(h => h === 'maxparticipants' || h === 'max');
+  const maxIdx = rawHeaders.findIndex(
+    h =>
+      h === 'maxparticipants' ||
+      h === 'max' ||
+      h === 'candidatesperteam' ||
+      h === 'maxcandidatesperteam' ||
+      h === 'candidateperteam' ||
+      h === 'candidatesperhouse'
+  );
   const locIdx = rawHeaders.findIndex(h => h === 'stagelocation' || h === 'venue' || h === 'location');
   const timeIdx = rawHeaders.findIndex(h => h === 'scheduletime' || h === 'time' || h === 'schedule');
   const rulesIdx = rawHeaders.findIndex(h => h === 'rules' || h === 'description');
@@ -1167,8 +1175,8 @@ export function validateIndividualRegCSVRows(
             }
           }
 
-          // Program house limit check (allotted candidate limit)
-          const teamHouseLimit = matchedProgram.maxParticipants || maxCandidates || 2;
+          // Program house limit check (allotted candidate limit per team)
+          const teamHouseLimit = matchedProgram.maxParticipants || maxCandidates || 1;
           const existingTeamCount = existingRegistrations.filter(
             r =>
               r.programId === matchedProgram.id &&
@@ -1177,15 +1185,16 @@ export function validateIndividualRegCSVRows(
               r.status === 'CONFIRMED'
           ).length;
 
-          const batchTeamCount = csvProgramTeamEntries.get(matchedProgram.id) || 0;
+          const programTeamKey = `${matchedProgram.id}_${matchedStudent.teamId}`;
+          const batchTeamCount = csvProgramTeamEntries.get(programTeamKey) || 0;
           const totalTeamEntries = existingTeamCount + batchTeamCount + 1;
 
           if (totalTeamEntries > teamHouseLimit) {
             slotErrors.push(
-              `House event quota reached: Max ${teamHouseLimit} candidate(s) per house allowed for "${matchedProgram.name}".`
+              `Maximum ${teamHouseLimit} candidate(s) are allowed from your team for "${matchedProgram.name}".`
             );
           } else {
-            csvProgramTeamEntries.set(matchedProgram.id, batchTeamCount + 1);
+            csvProgramTeamEntries.set(programTeamKey, batchTeamCount + 1);
           }
         }
       }
