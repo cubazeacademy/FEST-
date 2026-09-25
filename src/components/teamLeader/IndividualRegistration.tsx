@@ -37,7 +37,10 @@ import {
   XCircle,
   AlertTriangle,
   X,
-  UserCheck
+  UserCheck,
+  LayoutGrid,
+  Table,
+  ArrowRightLeft
 } from 'lucide-react';
 
 export const IndividualRegistration: React.FC = () => {
@@ -336,6 +339,15 @@ export const IndividualRegistration: React.FC = () => {
   // Candidate Search & Filter (Right Panel)
   const [candidateSearch, setCandidateSearch] = useState('');
   const [candidateFilterStatus, setCandidateFilterStatus] = useState<'ALL' | 'REGISTERED' | 'ELIGIBLE'>('ALL');
+  const [viewMode, setViewMode] = useState<'CARDS' | 'TABLE'>('CARDS');
+
+  // Candidate avatar initials helper
+  const getInitials = (name?: string): string => {
+    if (!name) return 'CD';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
 
   // Feedback notifications
   const [feedback, setFeedback] = useState<{ success?: boolean; msg?: string } | null>(null);
@@ -1106,7 +1118,7 @@ export const IndividualRegistration: React.FC = () => {
                   />
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
                   {/* Status Filter Tabs */}
                   <button
                     type="button"
@@ -1130,208 +1142,386 @@ export const IndividualRegistration: React.FC = () => {
                   >
                     Registered ({activeProgramRegistrations.length})
                   </button>
+
+                  {/* View Mode Toggle */}
+                  <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 ml-1">
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('CARDS')}
+                      className={`p-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        viewMode === 'CARDS'
+                          ? 'bg-white text-slate-900 shadow-2xs'
+                          : 'text-slate-500 hover:text-slate-900'
+                      }`}
+                      title="Cards View"
+                    >
+                      <LayoutGrid className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('TABLE')}
+                      className={`p-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        viewMode === 'TABLE'
+                          ? 'bg-white text-slate-900 shadow-2xs'
+                          : 'text-slate-500 hover:text-slate-900'
+                      }`}
+                      title="Table View"
+                    >
+                      <Table className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {/* Candidates Table (Matching User Reference Layout) */}
-              <div className="rounded-2xl border border-slate-200 overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
-                        <th className="py-3 px-4">Candidate</th>
-                        <th className="py-3 px-4">Chest No</th>
-                        <th className="py-3 px-4">Class</th>
-                        <th className="py-3 px-4">Participation Breakdown</th>
-                        <th className="py-3 px-4 text-right">Registration Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium">
-                      {filteredCandidates.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="py-12 text-center text-slate-400 text-xs font-medium">
-                            {myStudents.length === 0
-                              ? `No active candidates registered under ${myTeam?.name || 'your'} House yet.`
-                              : `No candidates found matching the current filter in ${myTeam?.name || 'your'} House.`}
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredCandidates.map(student => {
-                          const regEntry = activeProgramRegistrations.find(
-                            r =>
-                              r.studentId === student.id ||
-                              (student.chestNumber && r.chestNumber && Number(r.chestNumber) === Number(student.chestNumber)) ||
-                              (student.admissionNo && r.admissionNo && r.admissionNo.toLowerCase() === student.admissionNo.toLowerCase())
-                          );
-                          const isRegistered = !!regEntry;
-                          const breakdown = getStudentParticipationBreakdown(student.id, registrations);
-                          const currentTotal = breakdown.totalIndividual;
-                          const currentTypeCount = isCurrentStage
-                            ? breakdown.stageCount
-                            : isCurrentNonStage
-                            ? breakdown.nonStageCount
-                            : isCurrentSports
-                            ? breakdown.sportsCount
-                            : currentTotal;
+              {/* ========================================================= */}
+              {/* CANDIDATES 2-COLUMN CARDS GRID (USER REFERENCE DESIGN)     */}
+              {/* ========================================================= */}
+              {viewMode === 'CARDS' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {filteredCandidates.length === 0 ? (
+                    <div className="col-span-full py-16 text-center text-slate-400 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                      <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                      <p className="text-xs font-bold text-slate-600">
+                        {myStudents.length === 0
+                          ? `No active candidates registered under ${myTeam?.name || 'your'} House yet.`
+                          : `No candidates found matching the current filter in ${myTeam?.name || 'your'} House.`}
+                      </p>
+                    </div>
+                  ) : (
+                    filteredCandidates.map(student => {
+                      const regEntry = activeProgramRegistrations.find(
+                        r =>
+                          r.studentId === student.id ||
+                          (student.chestNumber && r.chestNumber && Number(r.chestNumber) === Number(student.chestNumber)) ||
+                          (student.admissionNo && r.admissionNo && r.admissionNo.toLowerCase() === student.admissionNo.toLowerCase())
+                      );
+                      const isRegistered = !!regEntry;
+                      const breakdown = getStudentParticipationBreakdown(student.id, registrations);
+                      const currentTotal = breakdown.totalIndividual;
+                      const currentTypeCount = isCurrentStage
+                        ? breakdown.stageCount
+                        : isCurrentNonStage
+                        ? breakdown.nonStageCount
+                        : isCurrentSports
+                        ? breakdown.sportsCount
+                        : currentTotal;
 
-                          const isTotalQuotaReached = currentTotal >= maxIndividualLimit;
-                          const isTypeQuotaReached = currentTypeCount >= activeProgramTypeLimit;
-                          const isQuotaReached = isTotalQuotaReached || isTypeQuotaReached;
-                          const isCatMatching = isCategoryMatch(student.category, activeProgram.category, categoryConfigs);
+                      const isTotalQuotaReached = currentTotal >= maxIndividualLimit;
+                      const isTypeQuotaReached = currentTypeCount >= activeProgramTypeLimit;
+                      const isQuotaReached = isTotalQuotaReached || isTypeQuotaReached;
+                      const initials = getInitials(student.name);
 
-                          let limitBadge = null;
-                          if (isTotalQuotaReached) {
-                            limitBadge = 'TOTAL MAX';
-                          } else if (isTypeQuotaReached) {
-                            limitBadge = `${activeProgramTypeLabel.toUpperCase()} MAX`;
-                          }
+                      return (
+                        <div
+                          key={student.id}
+                          className={`p-4 rounded-2xl border transition-all shadow-2xs hover:shadow-xs space-y-3 relative group ${
+                            isRegistered
+                              ? 'border-emerald-200 bg-emerald-50/20'
+                              : isQuotaReached || isTeamQuotaFull
+                              ? 'border-slate-200 bg-slate-50/60 opacity-80'
+                              : 'border-slate-200/90 bg-white hover:border-slate-300'
+                          }`}
+                        >
+                          {/* Row 1: Avatar, Name, House, and Action */}
+                          <div className="flex items-start justify-between gap-2.5">
+                            <div className="flex items-center gap-3 min-w-0">
+                              {/* Avatar Circle */}
+                              <div
+                                style={{
+                                  backgroundColor: `${teamColor}15`,
+                                  color: teamColor,
+                                  borderColor: `${teamColor}30`
+                                }}
+                                className="w-9 h-9 rounded-full font-black text-xs flex items-center justify-center shrink-0 border"
+                              >
+                                {initials}
+                              </div>
 
-                          return (
-                            <tr
-                              key={student.id}
-                              className={`transition-colors ${
-                                isRegistered
-                                  ? 'bg-emerald-50/40 hover:bg-emerald-50/70'
-                                  : isQuotaReached || isTeamQuotaFull
-                                  ? 'bg-amber-50/30 hover:bg-amber-50/50'
-                                  : 'hover:bg-slate-50/80'
-                              }`}
-                            >
-                              {/* Candidate Info */}
-                              <td className="py-3.5 px-4">
-                                <div>
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="font-bold text-slate-900 text-xs uppercase">
-                                      {student.name}
-                                    </span>
-                                    <span
-                                      className={`text-[10px] font-bold px-1.5 py-0.2 rounded uppercase border ${
-                                        isCatMatching
-                                          ? 'bg-slate-100 text-slate-700 border-slate-200'
-                                          : 'bg-amber-50 text-amber-700 border-amber-200'
-                                      }`}
-                                    >
-                                      {student.category}
-                                    </span>
-                                  </div>
-                                  <span className="text-[11px] font-mono text-slate-400 block mt-0.5">
-                                    Adm: {student.admissionNo}
-                                  </span>
-                                </div>
-                              </td>
-
-                              {/* Chest No */}
-                              <td className="py-3.5 px-4">
-                                {student.chestNumber ? (
+                              <div className="min-w-0">
+                                <h4 className="text-xs font-black text-slate-900 tracking-tight truncate uppercase">
+                                  {student.name}
+                                </h4>
+                                <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500 font-bold uppercase">
                                   <span
-                                    style={{ backgroundColor: `${teamColor}12`, color: teamColor, borderColor: `${teamColor}30` }}
-                                    className="font-mono font-bold px-2 py-0.5 rounded border"
-                                  >
-                                    #{student.chestNumber}
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-400">-</span>
-                                )}
-                              </td>
-
-                              {/* Class */}
-                              <td className="py-3.5 px-4 font-mono text-slate-600">
-                                Class {student.classNumber}
-                              </td>
-
-                              {/* Quota Progress */}
-                              <td className="py-3.5 px-4">
-                                <div className="w-36 space-y-1">
-                                  <div className="flex items-center justify-between text-[11px] font-bold">
-                                    <span
-                                      className={`font-mono ${
-                                        isQuotaReached ? 'text-amber-700' : 'text-slate-700'
-                                      }`}
-                                    >
-                                      {activeProgramTypeLabel}: {currentTypeCount}/{activeProgramTypeLimit}
-                                    </span>
-                                    {limitBadge && (
-                                      <span className="text-[9px] font-black bg-amber-100 text-amber-800 px-1 rounded border border-amber-300">
-                                        {limitBadge}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                                    <div
-                                      className="h-1.5 rounded-full transition-all"
-                                      style={{
-                                        backgroundColor: isQuotaReached ? '#f59e0b' : teamColor,
-                                        width: `${Math.min(
-                                          100,
-                                          (currentTypeCount / Math.max(1, activeProgramTypeLimit)) * 100
-                                        )}%`
-                                      }}
-                                    />
-                                  </div>
-                                  <div className="text-[10px] text-slate-400 font-mono">
-                                    Total: {currentTotal}/{maxIndividualLimit} (Stg:{breakdown.stageCount}, Non:{breakdown.nonStageCount}, Sp:{breakdown.sportsCount})
-                                  </div>
+                                    className="w-2 h-2 rounded-full shrink-0"
+                                    style={{ backgroundColor: teamColor }}
+                                  />
+                                  <span>{myTeam?.name || 'House'}</span>
                                 </div>
-                              </td>
+                              </div>
+                            </div>
 
-                              {/* Action Button */}
-                              <td className="py-3.5 px-4 text-right">
-                                {isRegistered ? (
-                                  <div className="flex items-center justify-end gap-2">
-                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100/80 px-2.5 py-1 rounded-xl border border-emerald-200">
-                                      <Check className="w-3.5 h-3.5" /> Registered
-                                    </span>
-                                    {settings.registrationOpen && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleWithdraw(regEntry.id, student.name)}
-                                        className="p-1.5 rounded-xl hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                                        title="Withdraw Candidate"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    )}
-                                  </div>
-                                ) : (
+                            {/* Top Right Action Button */}
+                            {isRegistered ? (
+                              <div className="flex items-center gap-1">
+                                <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-emerald-700 bg-emerald-100/90 px-2 py-0.5 rounded-full border border-emerald-200">
+                                  <Check className="w-3 h-3" /> Registered
+                                </span>
+                                {settings.registrationOpen && (
                                   <button
                                     type="button"
-                                    onClick={() => handleRegister(student.id, student.name)}
-                                    disabled={isQuotaReached || isTeamQuotaFull || !settings.registrationOpen}
-                                    style={
-                                      isTeamQuotaFull || isQuotaReached || !settings.registrationOpen
-                                        ? undefined
-                                        : { backgroundColor: teamColor, boxShadow: `0 3px 10px 0 ${teamColor}35` }
-                                    }
-                                    className={`px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ml-auto cursor-pointer ${
-                                      isTeamQuotaFull || isQuotaReached || !settings.registrationOpen
-                                        ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
-                                        : 'text-white hover:opacity-90'
-                                    }`}
-                                    title={
-                                      isTeamQuotaFull
-                                        ? `Maximum ${allowedCandidatesPerTeam} candidate(s) are allowed from your team for this program.`
-                                        : isTotalQuotaReached
-                                        ? 'Candidate has reached the overall maximum limit'
-                                        : isTypeQuotaReached
-                                        ? `Candidate has reached the maximum ${activeProgramTypeLabel} program limit`
-                                        : !settings.registrationOpen
-                                        ? 'Registration is currently closed'
-                                        : undefined
-                                    }
+                                    onClick={() => handleWithdraw(regEntry.id, student.name)}
+                                    className="text-slate-400 hover:text-rose-600 p-1 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
+                                    title="Withdraw Candidate"
                                   >
-                                    <UserPlus className="w-3.5 h-3.5" />
-                                    {isTeamQuotaFull ? 'Quota Full' : 'Register'}
+                                    <X className="w-3.5 h-3.5" />
                                   </button>
                                 )}
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleRegister(student.id, student.name)}
+                                disabled={isQuotaReached || isTeamQuotaFull || !settings.registrationOpen}
+                                style={
+                                  isTeamQuotaFull || isQuotaReached || !settings.registrationOpen
+                                    ? undefined
+                                    : { backgroundColor: teamColor }
+                                }
+                                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shrink-0 ${
+                                  isTeamQuotaFull || isQuotaReached || !settings.registrationOpen
+                                    ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
+                                    : 'text-white hover:opacity-90 shadow-2xs'
+                                }`}
+                              >
+                                <UserPlus className="w-3 h-3" />
+                                <span>{isTeamQuotaFull ? 'Full' : 'Register'}</span>
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Row 2: Chest # / Category & Substitution Allowed Tag */}
+                          <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] font-mono">
+                            <div className="flex items-center gap-2.5">
+                              {student.chestNumber ? (
+                                <span className="font-bold text-slate-800 font-mono">
+                                  {student.chestNumber}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                              <span className="text-slate-500 uppercase font-semibold">
+                                {student.category}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1 text-[11px] text-slate-500 font-medium">
+                              <ArrowRightLeft className="w-3 h-3 text-slate-400" />
+                              <span className="text-slate-600">
+                                {activeProgramTypeLabel}: <strong className="text-slate-900">{currentTypeCount}/{activeProgramTypeLimit}</strong>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
-              </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* CANDIDATES TABLE VIEW (DETAILED MATRIX)                   */}
+              {/* ========================================================= */}
+              {viewMode === 'TABLE' && (
+                <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
+                          <th className="py-3 px-4">Candidate</th>
+                          <th className="py-3 px-4">Chest No</th>
+                          <th className="py-3 px-4">Class</th>
+                          <th className="py-3 px-4">Participation Breakdown</th>
+                          <th className="py-3 px-4 text-right">Registration Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium">
+                        {filteredCandidates.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="py-12 text-center text-slate-400 text-xs font-medium">
+                              {myStudents.length === 0
+                                ? `No active candidates registered under ${myTeam?.name || 'your'} House yet.`
+                                : `No candidates found matching the current filter in ${myTeam?.name || 'your'} House.`}
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredCandidates.map(student => {
+                            const regEntry = activeProgramRegistrations.find(
+                              r =>
+                                r.studentId === student.id ||
+                                (student.chestNumber && r.chestNumber && Number(r.chestNumber) === Number(student.chestNumber)) ||
+                                (student.admissionNo && r.admissionNo && r.admissionNo.toLowerCase() === student.admissionNo.toLowerCase())
+                            );
+                            const isRegistered = !!regEntry;
+                            const breakdown = getStudentParticipationBreakdown(student.id, registrations);
+                            const currentTotal = breakdown.totalIndividual;
+                            const currentTypeCount = isCurrentStage
+                              ? breakdown.stageCount
+                              : isCurrentNonStage
+                              ? breakdown.nonStageCount
+                              : isCurrentSports
+                              ? breakdown.sportsCount
+                              : currentTotal;
+
+                            const isTotalQuotaReached = currentTotal >= maxIndividualLimit;
+                            const isTypeQuotaReached = currentTypeCount >= activeProgramTypeLimit;
+                            const isQuotaReached = isTotalQuotaReached || isTypeQuotaReached;
+                            const isCatMatching = isCategoryMatch(student.category, activeProgram.category, categoryConfigs);
+
+                            let limitBadge = null;
+                            if (isTotalQuotaReached) {
+                              limitBadge = 'TOTAL MAX';
+                            } else if (isTypeQuotaReached) {
+                              limitBadge = `${activeProgramTypeLabel.toUpperCase()} MAX`;
+                            }
+
+                            return (
+                              <tr
+                                key={student.id}
+                                className={`transition-colors ${
+                                  isRegistered
+                                    ? 'bg-emerald-50/40 hover:bg-emerald-50/70'
+                                    : isQuotaReached || isTeamQuotaFull
+                                    ? 'bg-amber-50/30 hover:bg-amber-50/50'
+                                    : 'hover:bg-slate-50/80'
+                                }`}
+                              >
+                                {/* Candidate Info */}
+                                <td className="py-3.5 px-4">
+                                  <div>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="font-bold text-slate-900 text-xs uppercase">
+                                        {student.name}
+                                      </span>
+                                      <span
+                                        className={`text-[10px] font-bold px-1.5 py-0.2 rounded uppercase border ${
+                                          isCatMatching
+                                            ? 'bg-slate-100 text-slate-700 border-slate-200'
+                                            : 'bg-amber-50 text-amber-700 border-amber-200'
+                                        }`}
+                                      >
+                                        {student.category}
+                                      </span>
+                                    </div>
+                                    <span className="text-[11px] font-mono text-slate-400 block mt-0.5">
+                                      Adm: {student.admissionNo}
+                                    </span>
+                                  </div>
+                                </td>
+
+                                {/* Chest No */}
+                                <td className="py-3.5 px-4">
+                                  {student.chestNumber ? (
+                                    <span
+                                      style={{ backgroundColor: `${teamColor}12`, color: teamColor, borderColor: `${teamColor}30` }}
+                                      className="font-mono font-bold px-2 py-0.5 rounded border"
+                                    >
+                                      #{student.chestNumber}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400">-</span>
+                                  )}
+                                </td>
+
+                                {/* Class */}
+                                <td className="py-3.5 px-4 font-mono text-slate-600">
+                                  Class {student.classNumber}
+                                </td>
+
+                                {/* Quota Progress */}
+                                <td className="py-3.5 px-4">
+                                  <div className="w-36 space-y-1">
+                                    <div className="flex items-center justify-between text-[11px] font-bold">
+                                      <span
+                                        className={`font-mono ${
+                                          isQuotaReached ? 'text-amber-700' : 'text-slate-700'
+                                        }`}
+                                      >
+                                        {activeProgramTypeLabel}: {currentTypeCount}/{activeProgramTypeLimit}
+                                      </span>
+                                      {limitBadge && (
+                                        <span className="text-[9px] font-black bg-amber-100 text-amber-800 px-1 rounded border border-amber-300">
+                                          {limitBadge}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                                      <div
+                                        className="h-1.5 rounded-full transition-all"
+                                        style={{
+                                          backgroundColor: isQuotaReached ? '#f59e0b' : teamColor,
+                                          width: `${Math.min(
+                                            100,
+                                            (currentTypeCount / Math.max(1, activeProgramTypeLimit)) * 100
+                                          )}%`
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 font-mono">
+                                      Total: {currentTotal}/{maxIndividualLimit} (Stg:{breakdown.stageCount}, Non:{breakdown.nonStageCount}, Sp:{breakdown.sportsCount})
+                                    </div>
+                                  </div>
+                                </td>
+
+                                {/* Action Button */}
+                                <td className="py-3.5 px-4 text-right">
+                                  {isRegistered ? (
+                                    <div className="flex items-center justify-end gap-2">
+                                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100/80 px-2.5 py-1 rounded-xl border border-emerald-200">
+                                        <Check className="w-3.5 h-3.5" /> Registered
+                                      </span>
+                                      {settings.registrationOpen && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleWithdraw(regEntry.id, student.name)}
+                                          className="p-1.5 rounded-xl hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                                          title="Withdraw Candidate"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRegister(student.id, student.name)}
+                                      disabled={isQuotaReached || isTeamQuotaFull || !settings.registrationOpen}
+                                      style={
+                                        isTeamQuotaFull || isQuotaReached || !settings.registrationOpen
+                                          ? undefined
+                                          : { backgroundColor: teamColor, boxShadow: `0 3px 10px 0 ${teamColor}35` }
+                                      }
+                                      className={`px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ml-auto cursor-pointer ${
+                                        isTeamQuotaFull || isQuotaReached || !settings.registrationOpen
+                                          ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
+                                          : 'text-white hover:opacity-90'
+                                      }`}
+                                      title={
+                                        isTeamQuotaFull
+                                          ? `Maximum ${allowedCandidatesPerTeam} candidate(s) are allowed from your team for this program.`
+                                          : isTotalQuotaReached
+                                          ? 'Candidate has reached the overall maximum limit'
+                                          : isTypeQuotaReached
+                                          ? `Candidate has reached the maximum ${activeProgramTypeLabel} program limit`
+                                          : !settings.registrationOpen
+                                          ? 'Registration is currently closed'
+                                          : undefined
+                                      }
+                                    >
+                                      <UserPlus className="w-3.5 h-3.5" />
+                                      {isTeamQuotaFull ? 'Quota Full' : 'Register'}
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <div className="p-16 text-center text-slate-400 space-y-3">
