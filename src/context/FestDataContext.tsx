@@ -30,7 +30,12 @@ import {
   saveScoringConfigsDb,
   saveAuditLogDb,
   saveLeaderboardCacheDb,
-  saveCloudFestState
+  saveResultCacheDb,
+  submitProgramResultRpc,
+  mapResultFromDb,
+  mapProgramFromDb,
+  mapRegistrationFromDb,
+  mapSettingsFromDb
 } from '../lib/supabase';
 import {
   AuditLog,
@@ -252,31 +257,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return () => clearTimeout(timer);
   }, [settings, teams, students, categoryConfigs, classMappings, programs, registrations, results, scoringConfigs, gradeConfigs, positionConfigs, auditLogs]);
 
-  // Debounced auto-mirror to fest_state snapshot document with client ID tracking
-  useEffect(() => {
-    if (!isInitialLoadDoneRef.current || isRemoteUpdatingRef.current) return;
-
-    const timer = setTimeout(() => {
-      saveCloudFestState({
-        _clientId: CLIENT_INSTANCE_ID,
-        _timestamp: Date.now(),
-        settings,
-        teams,
-        students,
-        categoryConfigs,
-        classMappings,
-        programs,
-        registrations,
-        results,
-        scoringConfigs,
-        auditLogs: auditLogs.slice(0, 50)
-      }).catch(console.error);
-    }, 1500);
-
-    return () => clearTimeout(timer);
-  }, [settings, teams, students, categoryConfigs, classMappings, programs, registrations, results, scoringConfigs, auditLogs]);
-
-  // Initial Fetch from Supabase & Realtime Subscription
+  // Initial Fetch from Supabase & Focused Realtime Subscriptions
   useEffect(() => {
     let isMounted = true;
 
@@ -311,7 +292,7 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             isRemoteUpdatingRef.current = false;
           }, 300);
         } else {
-          // Seed initial state to relational tables
+          // Seed initial state to relational tables if completely empty
           const payload = {
             settings,
             teams,
@@ -342,49 +323,101 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     loadCloudState();
 
-    // Supabase Realtime channel
+    // High-performance focused Realtime channel subscriptions
     const channel = supabase
-      .channel('public:fest_state')
+      .channel('public:focused_updates')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'fest_state', filter: `id=eq.${FEST_STATE_KEY}` },
+        { event: '*', schema: 'public', table: 'results' },
         (payload) => {
-          const updated = payload.new as { id?: string; data?: any; updated_at?: string };
-          if (updated && updated.data && !isRemoteUpdatingRef.current) {
-            const d = updated.data;
-            // Ignore echoes originating from this specific client/tab
-            if (d._clientId === CLIENT_INSTANCE_ID) {
-              return;
+          if (payload.eventType === 'DELETE') {
+            const deletedId = (payload.old as any)?.id || (payload.old as any)?.program_id;
+            if (deletedId) {
+              setResults(prev => prev.filter(r => r.id !== deletedId && r.programId !== deletedId));
             }
-
-            isRemoteUpdatingRef.current = true;
-            if (d.settings) setSettings(d.settings);
-            if (d.teams) setTeams(d.teams);
-            if (d.students) setStudents(d.students);
-            if (d.categoryConfigs) setCategoryConfigs(d.categoryConfigs);
-            if (d.classMappings) setClassMappings(d.classMappings);
-            if (d.programs) setPrograms(deduplicateProgramsList(d.programs));
-            
-            if (Array.isArray(d.registrations)) {
-              setRegistrations(d.registrations);
-            }
-
-            if (d.results) setResults(d.results);
-            if (d.scoringConfigs) {
-              setScoringConfigs(d.scoringConfigs);
-              if (d.scoringConfigs.INDIVIDUAL) {
-                setGradeConfigs(d.scoringConfigs.INDIVIDUAL.gradeConfigs || INITIAL_GRADE_CONFIGS);
-                setPositionConfigs(d.scoringConfigs.INDIVIDUAL.positionConfigs || INITIAL_POSITION_CONFIGS);
+          } else if (payload.new) {
+            const updatedResult = mapResultFromDb(payload.new);
+            setResults(prev => {
+              const idx = prev.findIndex(r => r.id === updatedResult.id || r.programId === updatedResult.programId);
+              if (idx >= 0) {
+                const next = [...prev];
+                next[idx] = updatedResult;
+                return next;
               }
+              return [...prev, updatedResult];
+            });
+
+            // Keep program result status in sync
+            setPrograms(prev => prev.map(p => {
+              if (p.id === updatedResult.programId) {
+                return {
+                  ...p,
+                  resultStatus: updatedResult.status,
+                  status: updatedResult.status === 'PUBLISHED' ? 'COMPLETED' : p.status
+                };
+              }
+              return p;
+            }));
+          }
+          setLastSyncedAt(new Date().toLocaleTimeString());
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'programs' },
+        (payload) => {
+          if (payload.eventType === 'DELETE') {
+            const deletedId = (payload.old as any)?.id;
+            if (deletedId) {
+              setPrograms(prev => prev.filter(p => p.id !== deletedId));
             }
-            if (d.auditLogs) setAuditLogs(d.auditLogs);
-
-            setCloudStatus('connected');
-            setLastSyncedAt(new Date(updated.updated_at || Date.now()).toLocaleTimeString());
-
-            setTimeout(() => {
-              isRemoteUpdatingRef.current = false;
-            }, 300);
+          } else if (payload.new) {
+            const updatedProg = mapProgramFromDb(payload.new);
+            setPrograms(prev => {
+              const idx = prev.findIndex(p => p.id === updatedProg.id);
+              if (idx >= 0) {
+                const next = [...prev];
+                next[idx] = updatedProg;
+                return deduplicateProgramsList(next);
+              }
+              return deduplicateProgramsList([...prev, updatedProg]);
+            });
+          }
+          setLastSyncedAt(new Date().toLocaleTimeString());
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'registrations' },
+        (payload) => {
+          if (payload.eventType === 'DELETE') {
+            const deletedId = (payload.old as any)?.id;
+            if (deletedId) {
+              setRegistrations(prev => prev.filter(r => r.id !== deletedId));
+            }
+          } else if (payload.new) {
+            const updatedReg = mapRegistrationFromDb(payload.new);
+            setRegistrations(prev => {
+              const idx = prev.findIndex(r => r.id === updatedReg.id);
+              if (idx >= 0) {
+                const next = [...prev];
+                next[idx] = updatedReg;
+                return next;
+              }
+              return [...prev, updatedReg];
+            });
+          }
+          setLastSyncedAt(new Date().toLocaleTimeString());
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'fest_settings' },
+        (payload) => {
+          if (payload.new) {
+            const updatedSettings = mapSettingsFromDb(payload.new);
+            setSettings(updatedSettings);
+            setLastSyncedAt(new Date().toLocaleTimeString());
           }
         }
       )
@@ -447,14 +480,35 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return sorted[0]?.sportsTotalPoints > 0 ? sorted[0] : null;
   }, [teamLeaderboard, settings.enableSportsSection]);
 
-  // Keep live public leaderboard cache fresh in Postgres
+  // Keep live public JSONB result cache synchronized in Postgres
   useEffect(() => {
     if (!isInitialLoadDoneRef.current || isRemoteUpdatingRef.current) return;
     const timer = setTimeout(() => {
-      saveLeaderboardCacheDb(teamLeaderboard).catch(console.error);
-    }, 800);
+      // 1. Overall Team Leaderboard
+      saveResultCacheDb('team_leaderboard_overall', teamLeaderboard).catch(console.error);
+
+      // 2. Arts Team Leaderboard
+      const artsSorted = [...teamLeaderboard].sort((a, b) => b.artsTotalPoints - a.artsTotalPoints);
+      saveResultCacheDb('team_leaderboard_arts', artsSorted).catch(console.error);
+
+      // 3. Sports Team Leaderboard
+      const sportsSorted = [...teamLeaderboard].sort((a, b) => b.sportsTotalPoints - a.sportsTotalPoints);
+      saveResultCacheDb('team_leaderboard_sports', sportsSorted).catch(console.error);
+
+      // 4. Public Summary Card
+      const summary = {
+        totalCompetitions: programs.length,
+        publishedCompetitions: results.filter(r => r.status === 'PUBLISHED').length,
+        totalStudents: students.length,
+        topArtsTeam: artsSorted[0] || null,
+        topSportsTeam: sportsSorted[0] || null,
+        updatedAt: new Date().toISOString()
+      };
+      saveResultCacheDb('public_summary', summary).catch(console.error);
+    }, 1000);
+
     return () => clearTimeout(timer);
-  }, [teamLeaderboard]);
+  }, [teamLeaderboard, programs.length, results, students.length]);
 
   // Manual full sync trigger
   const syncWithCloud = useCallback(async () => {

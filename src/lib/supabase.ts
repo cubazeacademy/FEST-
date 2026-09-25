@@ -1229,15 +1229,136 @@ export async function saveAuditLogDb(log: AuditLog) {
   }
 }
 
-export async function saveLeaderboardCacheDb(leaderboard: any) {
+// =========================================================================
+// HIGH-PERFORMANCE RESULT CACHE & RPC METHODS
+// =========================================================================
+
+export async function saveResultCacheDb(cacheKey: string, data: any) {
   try {
-    await supabase.from('fest_state').upsert({
-      id: 'result_cache_leaderboard',
-      data: leaderboard,
-      updated_at: new Date().toISOString()
-    });
+    // 1. Try dedicated result_cache table
+    const { error: cacheErr } = await supabase
+      .from('result_cache')
+      .upsert({
+        cache_key: cacheKey,
+        data: data,
+        version: Date.now(),
+        updated_at: new Date().toISOString()
+      });
+
+    if (!cacheErr) {
+      return { success: true };
+    }
+
+    // 2. Fallback to fest_state key-value document
+    const { error: stateErr } = await supabase
+      .from('fest_state')
+      .upsert({
+        id: `cache_${cacheKey}`,
+        data: data,
+        updated_at: new Date().toISOString()
+      });
+
+    if (stateErr) throw stateErr;
     return { success: true };
   } catch (err: any) {
+    console.warn(`Result cache save warning (${cacheKey}):`, err?.message || err);
     return { success: false, error: err?.message };
   }
+}
+
+export async function fetchResultCacheDb(cacheKey: string) {
+  try {
+    // 1. Try result_cache
+    const { data: cacheRow, error: cacheErr } = await supabase
+      .from('result_cache')
+      .select('data, updated_at')
+      .eq('cache_key', cacheKey)
+      .maybeSingle();
+
+    if (!cacheErr && cacheRow?.data) {
+      return cacheRow.data;
+    }
+
+    // 2. Fallback to fest_state
+    const { data: stateRow } = await supabase
+      .from('fest_state')
+      .select('data')
+      .eq('id', `cache_${cacheKey}`)
+      .maybeSingle();
+
+    return stateRow?.data || null;
+  } catch (err) {
+    console.warn(`Result cache fetch warning (${cacheKey}):`, err);
+    return null;
+  }
+}
+
+export async function submitProgramResultRpc(params: {
+  programId: string;
+  programName: string;
+  section: string;
+  category: string;
+  programType: string;
+  status: string;
+  submittedBy: string;
+  entries: any[];
+  remarks?: string;
+}) {
+  try {
+    // 1. Attempt PostgreSQL RPC
+    const { data: rpcData, error: rpcError } = await supabase.rpc('submit_program_result', {
+      p_program_id: params.programId,
+      p_program_name: params.programName,
+      p_section: params.section,
+      p_category: params.category,
+      p_program_type: params.programType,
+      p_status: params.status,
+      p_submitted_by: params.submittedBy,
+      p_entries: params.entries,
+      p_remarks: params.remarks || null
+    });
+
+    if (!rpcError && rpcData?.success) {
+      return { success: true, data: rpcData };
+    }
+
+    // 2. Fallback to atomic row-level save
+    const resultId = 'res_' + params.programId;
+    const now = new Date().toISOString();
+    const resultObj: ProgramResult = {
+      id: resultId,
+      programId: params.programId,
+      programName: params.programName,
+      section: params.section as any,
+      category: params.category as any,
+      programType: params.programType as any,
+      status: params.status as any,
+      submittedBy: params.submittedBy,
+      submittedAt: now,
+      publishedAt: params.status === 'PUBLISHED' ? now : undefined,
+      entries: params.entries,
+      remarks: params.remarks
+    };
+
+    const res = await saveResultDb(resultObj);
+    if (!res.success) throw new Error(res.error);
+
+    // Update program status
+    await supabase
+      .from('programs')
+      .update({
+        result_status: params.status,
+        status: params.status === 'PUBLISHED' ? 'COMPLETED' : undefined
+      })
+      .eq('id', params.programId);
+
+    return { success: true, data: { programId: params.programId, status: params.status } };
+  } catch (err: any) {
+    console.error('submitProgramResult error:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+export async function saveLeaderboardCacheDb(leaderboard: any) {
+  return saveResultCacheDb('team_leaderboard_overall', leaderboard);
 }

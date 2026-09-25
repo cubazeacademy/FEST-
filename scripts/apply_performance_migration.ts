@@ -46,12 +46,22 @@ async function runMigration() {
     await client.connect();
     console.log('Connected successfully!');
 
-    const sqlPath = path.resolve(process.cwd(), 'scripts', 'apply_performance_indexes_and_cache.sql');
+    const sqlPath = path.resolve(process.cwd(), 'scripts', 'deploy_result_engine.sql');
     const sql = fs.readFileSync(sqlPath, 'utf8');
 
-    console.log('Executing Performance Optimization SQL migration...');
+    console.log('Executing High-Performance Festival Result Engine SQL migration...');
     await client.query(sql);
-    console.log('✅ Performance Indexes, Result Cache Table & RPC Stored Procedures created successfully!');
+    console.log('✅ Performance Indexes, Result Cache Table & PL/pgSQL Calculation Engine deployed successfully!');
+
+    // Test rebuild_all_result_cache
+    console.log('\n--- TESTING rebuild_all_result_cache() RPC ---');
+    const rebuildRes = await client.query(`SELECT public.rebuild_all_result_cache();`);
+    console.log('Rebuild result:', rebuildRes.rows[0]);
+
+    // Check result_cache entries
+    const cacheRows = await client.query(`SELECT cache_key, version, updated_at, jsonb_typeof(data) as type FROM public.result_cache;`);
+    console.log('\n--- VERIFIED RESULT_CACHE KEYS ---');
+    cacheRows.rows.forEach(r => console.log(`• ${r.cache_key}: version=${r.version}, type=${r.type}, updated_at=${r.updated_at}`));
 
     // Verify indexes
     const indexRes = await client.query(`
@@ -63,10 +73,6 @@ async function runMigration() {
 
     console.log('\n--- VERIFIED PERFORMANCE INDEXES ---');
     indexRes.rows.forEach(r => console.log(`• ${r.tablename}: ${r.indexname}`));
-
-    // Verify result_cache table
-    const cacheRes = await client.query(`SELECT count(*) FROM public.result_cache;`);
-    console.log(`\n✅ result_cache table verified: ${cacheRes.rows[0].count} rows`);
 
   } catch (err: any) {
     console.error('Migration error:', err.message || err);
