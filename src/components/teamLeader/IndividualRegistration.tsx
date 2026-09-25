@@ -319,27 +319,32 @@ export const IndividualRegistration: React.FC = () => {
     return categoryIndividualPrograms[0] || null;
   }, [categoryIndividualPrograms, selectedProgramId]);
 
-  // Next / Previous Program Navigation
-  const currentProgramIndex = categoryIndividualPrograms.findIndex(p => p.id === activeProgram?.id);
-  const handlePrevProgram = () => {
-    if (currentProgramIndex > 0) {
-      setSelectedProgramId(categoryIndividualPrograms[currentProgramIndex - 1].id);
-      setCandidateSearch('');
-      setFeedback(null);
-    }
-  };
-  const handleNextProgram = () => {
-    if (currentProgramIndex >= 0 && currentProgramIndex < categoryIndividualPrograms.length - 1) {
-      setSelectedProgramId(categoryIndividualPrograms[currentProgramIndex + 1].id);
-      setCandidateSearch('');
-      setFeedback(null);
-    }
-  };
-
   // Candidate Search & Filter (Right Panel)
   const [candidateSearch, setCandidateSearch] = useState('');
   const [candidateFilterStatus, setCandidateFilterStatus] = useState<'ALL' | 'REGISTERED' | 'ELIGIBLE'>('ALL');
   const [viewMode, setViewMode] = useState<'CARDS' | 'TABLE'>('CARDS');
+
+  // Select Program with Auto-Priority for Registered Candidates
+  const selectProgram = (progId: string) => {
+    setSelectedProgramId(progId);
+    setCandidateSearch('');
+    setFeedback(null);
+    const count = getProgramRegisteredCount(progId);
+    setCandidateFilterStatus(count > 0 ? 'REGISTERED' : 'ALL');
+  };
+
+  // Next / Previous Program Navigation
+  const currentProgramIndex = categoryIndividualPrograms.findIndex(p => p.id === activeProgram?.id);
+  const handlePrevProgram = () => {
+    if (currentProgramIndex > 0) {
+      selectProgram(categoryIndividualPrograms[currentProgramIndex - 1].id);
+    }
+  };
+  const handleNextProgram = () => {
+    if (currentProgramIndex >= 0 && currentProgramIndex < categoryIndividualPrograms.length - 1) {
+      selectProgram(categoryIndividualPrograms[currentProgramIndex + 1].id);
+    }
+  };
 
   // Candidate avatar initials helper
   const getInitials = (name?: string): string => {
@@ -477,7 +482,7 @@ export const IndividualRegistration: React.FC = () => {
   // Filtered candidate list for Right Panel (strictly from this Leader's House for selected category)
   const filteredCandidates = useMemo(() => {
     const q = candidateSearch.toLowerCase().trim();
-    return eligibleTeamStudents.filter(s => {
+    const list = eligibleTeamStudents.filter(s => {
       const isReg = activeProgramRegistrations.some(
         r =>
           r.studentId === s.id ||
@@ -495,6 +500,19 @@ export const IndividualRegistration: React.FC = () => {
         (s.classNumber && s.classNumber.toLowerCase().includes(q)) ||
         (s.category && s.category.toLowerCase().includes(q))
       );
+    });
+
+    // Sort registered candidates to appear first
+    return list.sort((a, b) => {
+      const aReg = activeProgramRegistrations.some(
+        r => r.studentId === a.id || (a.chestNumber && r.chestNumber && Number(r.chestNumber) === Number(a.chestNumber))
+      );
+      const bReg = activeProgramRegistrations.some(
+        r => r.studentId === b.id || (b.chestNumber && r.chestNumber && Number(r.chestNumber) === Number(b.chestNumber))
+      );
+      if (aReg && !bReg) return -1;
+      if (!aReg && bReg) return 1;
+      return (Number(a.chestNumber) || 9999) - (Number(b.chestNumber) || 9999);
     });
   }, [eligibleTeamStudents, candidateSearch, candidateFilterStatus, activeProgramRegistrations]);
 
@@ -845,11 +863,7 @@ export const IndividualRegistration: React.FC = () => {
                 return (
                   <div
                     key={prog.id}
-                    onClick={() => {
-                      setSelectedProgramId(prog.id);
-                      setCandidateSearch('');
-                      setFeedback(null);
-                    }}
+                    onClick={() => selectProgram(prog.id)}
                     style={isSelected ? { borderColor: teamColor, backgroundColor: `${teamColor}08`, boxShadow: `0 0 0 1px ${teamColor}30` } : undefined}
                     className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
                       isSelected
