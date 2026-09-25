@@ -354,6 +354,7 @@ export const GroupRegistration: React.FC = () => {
   const createdGroupsCount = registeredTeamGroups.length;
   const isMaxGroupsReached = createdGroupsCount >= maxGroupsAllowed;
   const nextGroupNumber = createdGroupsCount + 1;
+  const isProgramRegistrationOpen = (settings.registrationOpen !== false) && (activeProgram?.registrationOpen !== false);
 
   // IDs of students registered in any existing group for this program
   const alreadyRegisteredStudentIds = useMemo(() => {
@@ -1129,12 +1130,19 @@ export const GroupRegistration: React.FC = () => {
 
                 {/* Quota Overview Card */}
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-right self-start sm:self-auto shrink-0">
-                  <div className="text-[11px] font-bold text-slate-500 uppercase">House Group Status</div>
+                  <div className="text-[11px] font-bold text-slate-500 uppercase flex items-center justify-end gap-1">
+                    {!isProgramRegistrationOpen && <Lock className="w-3 h-3 text-rose-500" />}
+                    <span>House Group Status</span>
+                  </div>
                   <div className="text-sm font-black text-slate-900 font-mono">
                     {createdGroupsCount} / {maxGroupsAllowed} Groups Registered
                   </div>
                   <div className="text-[10px] text-slate-400 mt-0.5">
-                    Exact {requiredCandidatesCount} candidates required per group
+                    {!isProgramRegistrationOpen ? (
+                      <span className="text-rose-600 font-bold">Registration Closed (Locked)</span>
+                    ) : (
+                      `Exact ${requiredCandidatesCount} candidates required per group`
+                    )}
                   </div>
                 </div>
               </div>
@@ -1234,7 +1242,7 @@ export const GroupRegistration: React.FC = () => {
                             </h5>
                           </div>
 
-                          {settings.registrationOpen && (
+                          {isProgramRegistrationOpen && (
                             <div className="flex items-center gap-1 shrink-0">
                               <button
                                 type="button"
@@ -1291,8 +1299,20 @@ export const GroupRegistration: React.FC = () => {
                 </div>
               )}
 
-              {/* NEW GROUP CANDIDATE SLOTS BUILDER */}
-              {!isMaxGroupsReached ? (
+              {/* NEW GROUP CANDIDATE SLOTS BUILDER / CLOSED STATE */}
+              {!isProgramRegistrationOpen ? (
+                registeredTeamGroups.length === 0 && (
+                  <div className="py-16 text-center text-slate-400 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200 space-y-2">
+                    <Lock className="w-8 h-8 text-rose-400 mx-auto mb-1" />
+                    <p className="text-xs font-bold text-slate-700">
+                      Registration is Closed for {activeProgram.name}
+                    </p>
+                    <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
+                      No group teams were registered from {myTeam?.name || 'your'} House before registration closed.
+                    </p>
+                  </div>
+                )
+              ) : !isMaxGroupsReached ? (
                 <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/70 pb-3">
                     <div>
