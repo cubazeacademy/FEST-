@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useFestData } from '../../context/FestDataContext';
 import { useAuth } from '../../context/AuthContext';
 import { Modal } from '../common/Modal';
-import { Program, Registration, FestCategory } from '../../types';
+import { Program, Registration, FestCategory, Team, Student } from '../../types';
 import { exportRegistrationsToSpreadsheet } from '../../utils/csvHelpers';
 import { isCategoryMatch } from '../../utils/validations';
 import {
@@ -121,6 +121,35 @@ export const RegistrationMaster: React.FC = () => {
   const [teamToClear, setTeamToClear] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Helper to normalize strings for robust comparison
+  const normalizeText = (text?: string): string => {
+    if (!text) return '';
+    return text.toLowerCase().replace(/[\s_\-()./]/g, '').trim();
+  };
+
+  // Helper to check if a registration is active (not withdrawn)
+  const isRegistrationActive = (r: Registration): boolean => {
+    if (!r) return false;
+    if (r.status && r.status.toUpperCase() === 'WITHDRAWN') return false;
+    return true;
+  };
+
+  // Helper to match team flexibly by ID, Code, or Name
+  const isTeamMatch = (team: Team, r: Registration): boolean => {
+    if (!team || !r) return false;
+    const tId = (team.id || '').toLowerCase().trim();
+    const tCode = (team.code || '').toLowerCase().trim();
+    const tName = (team.name || '').toLowerCase().trim();
+    const rTeamId = (r.teamId || '').toLowerCase().trim();
+    const rTeamName = (r.teamName || '').toLowerCase().trim();
+
+    if (rTeamId && (rTeamId === tId || rTeamId === tCode || rTeamId === tName)) return true;
+    if (rTeamName && (rTeamName === tName || rTeamName === tCode || rTeamName === tId)) return true;
+    if (tName && rTeamName && (tName.includes(rTeamName) || rTeamName.includes(tName))) return true;
+    if (tName && rTeamId && (tName.includes(rTeamId) || rTeamId.includes(tName))) return true;
+    return false;
+  };
+
   // Helper to test if a registration matches a program
   const isProgramRegMatch = (r: Registration, prog: Program): boolean => {
     if (!r || !prog) return false;
@@ -129,20 +158,46 @@ export const RegistrationMaster: React.FC = () => {
     const pCode = (prog.code || '').toLowerCase().trim();
     const rProgName = (r.programName || '').toLowerCase().trim();
     const pName = (prog.name || '').toLowerCase().trim();
+    const rProgCode = ((r as any).programCode || '').toLowerCase().trim();
 
-    if (rProgId && (rProgId === pId || rProgId === pCode)) return true;
-    if ((r as any).programCode && (((r as any).programCode).toLowerCase().trim() === pCode || ((r as any).programCode).toLowerCase().trim() === pId)) return true;
-    if (rProgName && pName && rProgName === pName) {
+    // 1. Direct ID match or Code match
+    if (rProgId && (rProgId === pId || (pCode && rProgId === pCode))) return true;
+    if (rProgCode && (rProgCode === pCode || rProgCode === pId)) return true;
+
+    // 2. Lookup program from master list by registration's programId
+    const registeredProgram = programs.find(
+      p =>
+        (p.id && p.id.toLowerCase().trim() === rProgId) ||
+        (p.code && p.code.toLowerCase().trim() === rProgId)
+    );
+    if (registeredProgram) {
+      const regPId = (registeredProgram.id || '').toLowerCase().trim();
+      const regPCode = (registeredProgram.code || '').toLowerCase().trim();
+      const regPName = (registeredProgram.name || '').toLowerCase().trim();
+
+      if (regPId === pId) return true;
+      if (regPCode && pCode && regPCode === pCode) return true;
+      if (
+        normalizeText(regPName) === normalizeText(pName) &&
+        (!registeredProgram.category || !prog.category || isCategoryMatch(registeredProgram.category, prog.category, categoryConfigs))
+      ) {
+        return true;
+      }
+    }
+
+    // 3. Match by normalized Name + Category
+    if (normalizeText(rProgName) && normalizeText(pName) && normalizeText(rProgName) === normalizeText(pName)) {
       if (!r.category || !prog.category || isCategoryMatch(r.category, prog.category, categoryConfigs)) {
         return true;
       }
     }
+
     return false;
   };
 
   // Helper to count registrations for a program
   const getProgramRegCount = (prog: Program): number => {
-    return baseRegistrations.filter(r => isProgramRegMatch(r, prog) && r.status === 'CONFIRMED').length;
+    return baseRegistrations.filter(r => isProgramRegMatch(r, prog) && isRegistrationActive(r)).length;
   };
 
   // Filtered Programmes for Left Sidebar
@@ -207,8 +262,8 @@ export const RegistrationMaster: React.FC = () => {
   // Registrations for the active program
   const activeProgramRegistrations = useMemo(() => {
     if (!activeProgram) return [];
-    return baseRegistrations.filter(r => isProgramRegMatch(r, activeProgram) && r.status === 'CONFIRMED');
-  }, [baseRegistrations, activeProgram]);
+    return baseRegistrations.filter(r => isProgramRegMatch(r, activeProgram) && isRegistrationActive(r));
+  }, [baseRegistrations, activeProgram, programs, categoryConfigs]);
 
   // House/Team breakdown counts for active program
   const teamRegCounts = useMemo(() => {
@@ -218,12 +273,7 @@ export const RegistrationMaster: React.FC = () => {
     });
 
     activeProgramRegistrations.forEach(r => {
-      const matchedTeam = teams.find(
-        t =>
-          t.id === r.teamId ||
-          t.name.toLowerCase() === (r.teamName || r.teamId || '').toLowerCase() ||
-          t.code.toLowerCase() === (r.teamId || '').toLowerCase()
-      );
+      const matchedTeam = teams.find(t => isTeamMatch(t, r));
       if (matchedTeam) {
         counts[matchedTeam.id] = (counts[matchedTeam.id] || 0) + 1;
       }
@@ -237,24 +287,27 @@ export const RegistrationMaster: React.FC = () => {
     return activeProgramRegistrations.filter(r => {
       // Team filter
       if (selectedTeamFilter !== 'ALL') {
-        const matchedTeam = teams.find(
-          t =>
-            t.id === r.teamId ||
-            t.name.toLowerCase() === (r.teamName || r.teamId || '').toLowerCase() ||
-            t.code.toLowerCase() === (r.teamId || '').toLowerCase()
-        );
-        if (!matchedTeam || matchedTeam.id !== selectedTeamFilter) return false;
+        const targetTeam = teams.find(t => t.id === selectedTeamFilter);
+        if (targetTeam && !isTeamMatch(targetTeam, r)) {
+          return false;
+        }
       }
 
       // Candidate search query
       const q = candidateSearch.toLowerCase().trim();
       if (!q) return true;
 
+      // Lookup student for enriched search
+      const student = students.find(s => s.id === r.studentId || (s.chestNumber && r.chestNumber && Number(s.chestNumber) === Number(r.chestNumber)));
+      const sName = (r.studentName || student?.name || '').toLowerCase();
+      const sAdm = (r.admissionNo || student?.admissionNo || '').toLowerCase();
+      const sChest = (r.chestNumber || student?.chestNumber || '').toString();
+
       return (
-        r.studentName?.toLowerCase().includes(q) ||
+        sName.includes(q) ||
         r.groupName?.toLowerCase().includes(q) ||
-        r.admissionNo?.toLowerCase().includes(q) ||
-        (r.chestNumber && r.chestNumber.toString().includes(q)) ||
+        sAdm.includes(q) ||
+        sChest.includes(q) ||
         r.teamName?.toLowerCase().includes(q) ||
         r.classNumber?.toLowerCase().includes(q) ||
         r.groupMembers?.some(
@@ -265,7 +318,7 @@ export const RegistrationMaster: React.FC = () => {
         )
       );
     });
-  }, [activeProgramRegistrations, selectedTeamFilter, candidateSearch, teams]);
+  }, [activeProgramRegistrations, selectedTeamFilter, candidateSearch, teams, students]);
 
   // Candidate avatar initials helper
   const getInitials = (name?: string): string => {
@@ -818,8 +871,19 @@ export const RegistrationMaster: React.FC = () => {
                     </div>
                   ) : (
                     filteredActiveRegistrations.map(reg => {
-                      const initials = getInitials(reg.studentName || reg.groupName);
+                      const student = students.find(
+                        s =>
+                          s.id === reg.studentId ||
+                          (s.chestNumber && reg.chestNumber && Number(s.chestNumber) === Number(reg.chestNumber))
+                      );
+                      const displayName = reg.studentName || student?.name || reg.groupName || 'Candidate';
+                      const initials = getInitials(displayName);
                       const isGroup = reg.programType === 'GROUP' || reg.programType === 'GENERAL';
+                      const matchedTeam = teams.find(t => isTeamMatch(t, reg));
+                      const displayTeamName = reg.teamName || matchedTeam?.name || 'House';
+                      const displayTeamColor = reg.teamColor || matchedTeam?.color || '#ef4444';
+                      const displayChestNo = reg.chestNumber || student?.chestNumber;
+                      const displayCategory = reg.category || student?.category || activeProgram.category;
 
                       return (
                         <div
@@ -836,14 +900,14 @@ export const RegistrationMaster: React.FC = () => {
 
                               <div className="min-w-0">
                                 <h4 className="text-xs font-black text-slate-900 tracking-tight truncate uppercase">
-                                  {reg.studentName || reg.groupName}
+                                  {displayName}
                                 </h4>
                                 <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500 font-bold uppercase">
                                   <span
                                     className="w-2 h-2 rounded-full shrink-0"
-                                    style={{ backgroundColor: reg.teamColor || '#ef4444' }}
+                                    style={{ backgroundColor: displayTeamColor }}
                                   />
-                                  <span>{reg.teamName || 'House'}</span>
+                                  <span>{displayTeamName}</span>
                                 </div>
                               </div>
                             </div>
@@ -851,7 +915,7 @@ export const RegistrationMaster: React.FC = () => {
                             {/* Delete / Withdraw × Button */}
                             <button
                               type="button"
-                              onClick={() => handleWithdraw(reg.id, reg.studentName || reg.groupName || 'Candidate')}
+                              onClick={() => handleWithdraw(reg.id, displayName)}
                               className="text-slate-300 hover:text-rose-600 p-1 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
                               title="Withdraw / Remove Registration"
                             >
@@ -862,13 +926,13 @@ export const RegistrationMaster: React.FC = () => {
                           {/* Row 2: Chest # / Category & Substitution Allowed Tag */}
                           <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] font-mono">
                             <div className="flex items-center gap-3">
-                              {reg.chestNumber && (
+                              {displayChestNo && (
                                 <span className="font-bold text-slate-800">
-                                  {reg.chestNumber}
+                                  {displayChestNo}
                                 </span>
                               )}
                               <span className="text-slate-500 uppercase font-semibold">
-                                {reg.category}
+                                {displayCategory}
                               </span>
                             </div>
 
@@ -940,50 +1004,68 @@ export const RegistrationMaster: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {baseRegistrations
+                  .filter(r => isRegistrationActive(r))
                   .filter(r => {
                     const q = candidateSearch.toLowerCase().trim();
                     if (!q) return true;
+                    const student = students.find(s => s.id === r.studentId || (s.chestNumber && r.chestNumber && Number(s.chestNumber) === Number(r.chestNumber)));
+                    const sName = (r.studentName || student?.name || r.groupName || '').toLowerCase();
+                    const sAdm = (r.admissionNo || student?.admissionNo || '').toLowerCase();
+                    const sChest = (r.chestNumber || student?.chestNumber || '').toString();
+
                     return (
                       r.programName.toLowerCase().includes(q) ||
-                      r.studentName?.toLowerCase().includes(q) ||
+                      sName.includes(q) ||
                       r.teamName?.toLowerCase().includes(q) ||
-                      (r.chestNumber && r.chestNumber.toString().includes(q))
+                      sAdm.includes(q) ||
+                      sChest.includes(q)
                     );
                   })
-                  .map(reg => (
-                    <tr key={reg.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900">{reg.programName}</div>
-                        <div className="text-[10px] text-slate-500 uppercase">{reg.section} • {reg.programType}</div>
-                      </td>
-                      <td className="py-3 px-4 uppercase font-bold text-slate-700">{reg.category}</td>
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-1.5 font-bold uppercase text-slate-800">
-                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: reg.teamColor || '#ef4444' }} />
-                          <span>{reg.teamName}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 font-mono font-bold text-slate-800">
-                        {reg.chestNumber ? `#${reg.chestNumber}` : '—'}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900">{reg.studentName || reg.groupName}</div>
-                        {reg.admissionNo && <div className="text-[10px] text-slate-400">Adm: {reg.admissionNo}</div>}
-                      </td>
-                      <td className="py-3 px-4 text-slate-500 text-[11px]">
-                        {reg.timestamp ? new Date(reg.timestamp).toLocaleDateString() : '—'}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleWithdraw(reg.id, reg.studentName || reg.groupName || 'Candidate')}
-                          className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  .map(reg => {
+                    const student = students.find(s => s.id === reg.studentId || (s.chestNumber && reg.chestNumber && Number(s.chestNumber) === Number(reg.chestNumber)));
+                    const displayName = reg.studentName || student?.name || reg.groupName || 'Candidate';
+                    const matchedTeam = teams.find(t => isTeamMatch(t, reg));
+                    const displayTeamName = reg.teamName || matchedTeam?.name || 'House';
+                    const displayTeamColor = reg.teamColor || matchedTeam?.color || '#ef4444';
+                    const displayChestNo = reg.chestNumber || student?.chestNumber;
+                    const displayCategory = reg.category || student?.category || '—';
+                    const displayAdm = reg.admissionNo || student?.admissionNo;
+
+                    return (
+                      <tr key={reg.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">{reg.programName}</div>
+                          <div className="text-[10px] text-slate-500 uppercase">{reg.section} • {reg.programType}</div>
+                        </td>
+                        <td className="py-3 px-4 uppercase font-bold text-slate-700">{displayCategory}</td>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-1.5 font-bold uppercase text-slate-800">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: displayTeamColor }} />
+                            <span>{displayTeamName}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 font-mono font-bold text-slate-800">
+                          {displayChestNo ? `#${displayChestNo}` : '—'}
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">{displayName}</div>
+                          {displayAdm && <div className="text-[10px] text-slate-400">Adm: {displayAdm}</div>}
+                        </td>
+                        <td className="py-3 px-4 text-slate-500 text-[11px]">
+                          {reg.timestamp ? new Date(reg.timestamp).toLocaleDateString() : '—'}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleWithdraw(reg.id, displayName)}
+                            className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>
