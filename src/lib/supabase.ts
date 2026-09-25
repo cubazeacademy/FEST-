@@ -421,14 +421,14 @@ export async function fetchFullRelationalData() {
     ] = await Promise.all([
       supabase.from('fest_settings').select('*').eq('id', 'current_settings').maybeSingle(),
       supabase.from('teams').select('*').order('created_at', { ascending: true }),
-      supabase.from('students').select('*').order('created_at', { ascending: true }),
+      supabase.from('students').select('*').order('created_at', { ascending: true }).limit(10000),
       supabase.from('category_configs').select('*').order('created_at', { ascending: true }),
       supabase.from('class_mappings').select('*'),
-      supabase.from('programs').select('*').order('created_at', { ascending: true }),
-      supabase.from('registrations').select('*').order('timestamp', { ascending: false }),
-      supabase.from('results').select('*').order('created_at', { ascending: true }),
+      supabase.from('programs').select('*').order('created_at', { ascending: true }).limit(10000),
+      supabase.from('registrations').select('*').order('timestamp', { ascending: false }).limit(10000),
+      supabase.from('results').select('*').order('created_at', { ascending: true }).limit(10000),
       supabase.from('scoring_configs').select('*').eq('id', 'current_scoring').maybeSingle(),
-      supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(100),
+      supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(200),
       supabase.from('fest_state').select('data').eq('id', FEST_STATE_KEY).maybeSingle()
     ]);
 
@@ -970,8 +970,13 @@ export async function saveRegistrationDb(registration: Registration) {
 export async function saveRegistrationsBatchDb(registrations: Registration[]) {
   try {
     if (registrations.length === 0) return { success: true };
-    const { error } = await supabase.from('registrations').upsert(registrations.map(mapRegistrationToDb));
-    if (error) throw error;
+    const dbRows = registrations.map(mapRegistrationToDb);
+    // Upsert in chunks of 100 to guarantee database reliability for large batches
+    for (let i = 0; i < dbRows.length; i += 100) {
+      const chunk = dbRows.slice(i, i + 100);
+      const { error } = await supabase.from('registrations').upsert(chunk);
+      if (error) throw error;
+    }
     return { success: true };
   } catch (err: any) {
     console.error('Failed to batch save registrations:', err);

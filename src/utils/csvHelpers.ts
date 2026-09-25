@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import { Student, Program, Team, ClassCategoryMapping, CategoryConfig, FestSection, FestCategory, ProgramType, ProgramSubsection, Registration } from '../types';
-import { resolveCategoryFromClass } from './validations';
+import { resolveCategoryFromClass, isCategoryMatch } from './validations';
 
 /**
  * Universal Spreadsheet file reader (supports .csv, .xlsx, .xls)
@@ -970,27 +970,35 @@ export function validateIndividualRegCSVRows(
     const cleanProgName = progName.trim();
     const cleanCat = category.trim();
 
-    // Resolve Program
-    const matchedProgram = programs.find(
-      p => p.code.toLowerCase() === cleanProg.toLowerCase() || 
-           (cleanProgName && p.name.toLowerCase() === cleanProgName.toLowerCase()) || 
-           p.name.toLowerCase() === cleanProg.toLowerCase() || 
-           p.id === cleanProg
-    );
+    // Resolve Program with precise category scoping
+    let matchedProgram = programs.find(p => p.code.toLowerCase().trim() === cleanProg.toLowerCase());
+    if (!matchedProgram && cleanCat) {
+      matchedProgram = programs.find(
+        p => p.name.toLowerCase().trim() === (cleanProgName || cleanProg).toLowerCase() &&
+             isCategoryMatch(p.category, cleanCat, categoryConfigs)
+      );
+    }
+    if (!matchedProgram) {
+      matchedProgram = programs.find(
+        p => (cleanProgName && p.name.toLowerCase().trim() === cleanProgName.toLowerCase()) || 
+             p.name.toLowerCase().trim() === cleanProg.toLowerCase() || 
+             p.id === cleanProg
+      );
+    }
 
     const progErrors: string[] = [];
     const progWarnings: string[] = [];
 
-    if (!cleanProg) {
-      progErrors.push('Program code is required');
+    if (!cleanProg && !cleanProgName) {
+      progErrors.push('Program code or name is required');
     } else if (!matchedProgram) {
-      progErrors.push(`Program "${cleanProg}" not found`);
+      progErrors.push(`Program "${cleanProg || cleanProgName}" not found in category "${cleanCat || 'all'}"`);
     } else if (matchedProgram.programType !== 'INDIVIDUAL') {
       progErrors.push(`Program "${matchedProgram.name}" (${matchedProgram.code}) is a ${matchedProgram.programType} event, not an Individual event.`);
     }
 
     if (matchedProgram && cleanCat) {
-      if (matchedProgram.category.toLowerCase() !== cleanCat.toLowerCase()) {
+      if (!isCategoryMatch(matchedProgram.category, cleanCat, categoryConfigs)) {
         progWarnings.push(`CSV Category "${cleanCat}" differs from Program Category "${matchedProgram.category}".`);
       }
     }
@@ -1085,9 +1093,16 @@ export function validateIndividualRegCSVRows(
         resolvedAdm = matchedStudent.admissionNo;
         resolvedChest = matchedStudent.chestNumber ? matchedStudent.chestNumber.toString() : '';
 
-        // Validate Team ownership
-        if (teamId && matchedStudent.teamId !== teamId) {
-          slotErrors.push(`Student "${matchedStudent.name}" belongs to another house/team, not your house.`);
+        // Validate Team ownership with flexible matching
+        const cleanLeaderTeam = (teamId || '').trim().toLowerCase();
+        if (cleanLeaderTeam) {
+          const sTeam = (matchedStudent.teamId || '').trim().toLowerCase();
+          const isTeamMatch = sTeam === cleanLeaderTeam || 
+                              sTeam.includes(cleanLeaderTeam) || 
+                              cleanLeaderTeam.includes(sTeam);
+          if (!isTeamMatch) {
+            slotErrors.push(`Student "${matchedStudent.name}" belongs to another house/team, not your house.`);
+          }
         }
 
         if (matchedStudent.status === 'INACTIVE') {

@@ -1269,6 +1269,12 @@ export const FestDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const teamId = student.teamId || '';
       const pairKey = `${program.id}_${teamId}`;
 
+      // Enforce duplicate check
+      const alreadyRegistered = registrations.some(
+        r => r.programId === program.id && r.studentId === student.id && r.status === 'CONFIRMED'
+      ) || newRegs.some(r => r.programId === program.id && r.studentId === student.id);
+      if (alreadyRegistered) continue;
+
       // Enforce team candidate quota for individual programs
       const maxAllowed = program.maxParticipants || 1;
       const existingTeamCount = registrations.filter(
